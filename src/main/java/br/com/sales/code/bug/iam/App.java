@@ -1,0 +1,10 @@
+package br.com.sales.code.bug.iam;
+
+/**
+ * Hello world!
+ */
+public class App {
+    public static void main(String[] args) {
+        System.out.println("Hello World!");
+    }
+}
