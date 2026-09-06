@@ -1,0 +1,51 @@
+#############################################
+## Java & Compiled Artifacts
+#############################################
+*.class
+*.log
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+
+#############################################
+## Build Tools (Maven & Gradle)
+#############################################
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+
+# Gradle
+.gradle/
+build/
+/out/
+
+#############################################
+## IntelliJ IDEA Settings
+#############################################
+.idea/
+*.iml
+*.ipr
+*.iws
+.shelf/
+
+# Optional: If you want to share specific IntelliJ layout or
+# dictionary configs with team members, uncomment the line below
+# but keep specific developer configurations hidden:
+# !.idea/runConfigurations/
+# !.idea/vcs.xml
+
+#############################################
+## Operating System Files
+#############################################
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
