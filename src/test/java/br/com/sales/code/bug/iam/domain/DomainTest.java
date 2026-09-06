@@ -1,11 +1,11 @@
 package br.com.sales.code.bug.iam.domain;
 
+import br.com.sales.code.bug.iam.service.PasswordHasher;
+import br.com.sales.code.bug.iam.service.PasswordHasherDigest;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 public class DomainTest {
 
@@ -14,29 +14,22 @@ public class DomainTest {
     private static final String MOCKED_ADMIN_PERMISSION_USER_WRITE = "user:write";
     private static final String MOCKED_ADMIN_PERMISSION_USER_READ = "user:read";
 
-    @Test
-    public void sholdNotRetrievePasswordUserInPlainText() {
+    private final PasswordHasher passwordHasher = new PasswordHasherDigest();
 
-        var user = createMockedUser();
+    @Test
+    public void shouldNotRetrievePasswordUserInPlainText() {
+
+        var roles = createMockedSetRoles();
+        var user = createMockedUser(roles);
 
         Assertions.assertNotEquals(MOCKED_PASS, user.getPasswordHash());
     }
 
-    private User createMockedUser() {
-
-        var id = UUID.randomUUID();
-        var username = "username";
-        var email = "username@teste.com";
-        var pass = MOCKED_PASS;
-        var status = UserStatus.ATIVO;
-        var roles = createMockedSetRoles();
-
-        return new User(id, username, email, pass, status, roles);
-    }
-
     @Test
     public void shouldHasPermissionInUserRole() {
-        var user = createMockedUser();
+
+        var roles = createMockedSetRoles();
+        var user = createMockedUser(roles);
 
         Assertions.assertTrue(user.hasPermission(MOCKED_ADMIN_PERMISSION_USER_WRITE));
         Assertions.assertFalse(user.hasPermission(MOCKED_ADMIN_PERMISSION_USER_READ));
@@ -44,17 +37,85 @@ public class DomainTest {
 
     @Test
     public void shouldNotModifiedUserRole() {
-        var user = createMockedUser();
+
+        var roles = createMockedSetRoles();
+        var user = createMockedUser(roles);
+
+        var newSetPermissions = new HashSet<Permission>();
+        newSetPermissions.add(new Permission(MOCKED_ADMIN_PERMISSION_USER_READ));
 
         Assertions.assertThrows(RuntimeException.class, () -> {
-            user.getRoles().add(new Role("User", Arrays.asList(new Permission(MOCKED_ADMIN_PERMISSION_USER_READ))));
+            user.getRoles().add(new Role("User", newSetPermissions));
         });
+
+        roles.add(new Role("TESTE", newSetPermissions));
+
+        Assertions.assertFalse(user.hasPermission(MOCKED_ADMIN_PERMISSION_USER_READ));
+    }
+
+    @Test
+    public void shouldAddAndRemoveANewRoleToSetRoles() {
+        var setRoles = createMockedSetRoles();
+        var user = createMockedUser(setRoles);
+
+        var newSetPermissions = new HashSet<Permission>();
+        newSetPermissions.add(new Permission(MOCKED_ADMIN_PERMISSION_USER_READ));
+
+        var newRole = new Role("NEW_ROLE", newSetPermissions);
+
+        user.addRole(newRole);
+
+        Assertions.assertTrue(user.hasPermission(MOCKED_ADMIN_PERMISSION_USER_READ));
+
+        var otherNewRole = new Role("NEW_ROLE", newSetPermissions);
+        user.removeRole(otherNewRole    );
+
+        Assertions.assertFalse(user.hasPermission(MOCKED_ADMIN_PERMISSION_USER_READ));
+    }
+
+    @Test
+    public void shouldNotAddRole() {
+        var roles = new HashSet<Role>();
+
+        var setPermissions1 = new HashSet<Permission>();
+        setPermissions1.add(new Permission(MOCKED_ADMIN_PERMISSION_ADMIN));
+        setPermissions1.add(new Permission(MOCKED_ADMIN_PERMISSION_USER_WRITE));
+        var role1 = new Role("ROLE", setPermissions1);
+
+        var setPermissions2 = new HashSet<Permission>();
+        setPermissions2.add(new Permission(MOCKED_ADMIN_PERMISSION_ADMIN));
+        setPermissions2.add(new Permission(MOCKED_ADMIN_PERMISSION_USER_WRITE));
+        var role2 = new Role("ROLE", setPermissions2);
+
+        roles.add(role1);
+        roles.add(role2);
+
+//        Assertions.assertEquals(2, roles.size());
+        Assertions.assertEquals(1, roles.size());
+    }
+
+    private User createMockedUser(Set<Role> setRoles) {
+
+        var id = UUID.randomUUID();
+        var username = "username";
+        var email = "username@teste.com";
+        var pass = MOCKED_PASS;
+        var status = UserStatus.ATIVO;
+        var roles = setRoles;
+
+        return new User(id, username, email, pass, status, roles, passwordHasher);
     }
 
     private Set<Role> createMockedSetRoles() {
-        var role = new Role("ADMIN", Arrays.asList(
-                new Permission(MOCKED_ADMIN_PERMISSION_ADMIN),
-                new Permission(MOCKED_ADMIN_PERMISSION_USER_WRITE)));
-        return Set.of(role);
+
+        var setPermissions = new HashSet<Permission>();
+        setPermissions.add(new Permission(MOCKED_ADMIN_PERMISSION_ADMIN));
+        setPermissions.add(new Permission(MOCKED_ADMIN_PERMISSION_USER_WRITE));
+
+        var role = new Role("ADMIN", setPermissions);
+        var setRoles = new HashSet<Role>();
+        setRoles.add(role);
+
+        return setRoles;
     }
 }

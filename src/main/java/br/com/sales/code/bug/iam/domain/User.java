@@ -1,22 +1,28 @@
 package br.com.sales.code.bug.iam.domain;
 
 import br.com.sales.code.bug.iam.service.PasswordHasher;
+import br.com.sales.code.bug.iam.service.PasswordHasherDigest;
 
-import java.util.Collections;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 public class User {
 
-    private static final String ALGORITHM_256= "SHA-256";
+    /**
+     * A decisão de tornar o PasswordHasher como uma interface foi para tornar a implementação tornar essa dependência menos acoplada,
+     * assim, tornando a criação de novas formas de criptografia mais fácil de ser implementada
+     */
+    private PasswordHasher passwordHasher;
 
-    public User(UUID id, String username, String email, String password, UserStatus status, Set<Role> roles) {
+    public User(UUID id, String username, String email, String password, UserStatus status, Set<Role> roles, PasswordHasher passwordHasher) {
+        this.passwordHasher = passwordHasher;
         this.id = id;
         this.username = username;
         this.email = email;
-        this.passwordHash = PasswordHasher.hash(password, ALGORITHM_256);
+        this.passwordHash = passwordHasher.hash(password);
         this.status = status;
-        this.roles = roles;
+        var newRoles = new HashSet<Role>();
+        newRoles.addAll(roles);
+        this.roles = Collections.unmodifiableSet(newRoles);
     }
 
     private UUID id;
@@ -43,19 +49,31 @@ public class User {
     }
 
     public UserStatus getStatus() {
-        return status;
+        return this.status;
     }
 
     public Set<Role> getRoles() {
-        return Collections.unmodifiableSet(roles);
+        return this.roles;
     }
 
-    public void addRole(Role role) {
-        this.roles.add(role);
+    public void addRole(Role newRole) {
+
+        var newSetRoles = new HashSet<Role>();
+        this.roles.forEach(role -> newSetRoles.add(role));
+        newSetRoles.add(newRole);
+
+        this.roles = Collections.unmodifiableSet(newSetRoles);
     }
 
-    public void removeRole(Role role) {
-        this.roles.remove(role);
+    public void removeRole(Role removeRole) {
+
+        var newSetRoles = new HashSet<Role>();
+        this.roles.forEach(role -> {
+            if (!role.equals(removeRole))
+                newSetRoles.add(role);
+        });
+
+        this.roles = Collections.unmodifiableSet(newSetRoles);
     }
 
     public boolean hasPermission(String permissionName) {
