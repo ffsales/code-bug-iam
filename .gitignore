@@ -50,9 +50,7 @@ build/
 # Windows
 Thumbs.db
 
-
-compiler.xml
-encodings.xml
-jarRepositories.xml
-misc.xml
-vcs.xml
+#############################################
+## IntelliJ IDEA XML config files
+#############################################
+.idea/*.xml
