@@ -1,7 +1,6 @@
 package br.com.sales.code.bug.iam.domain;
 
 import br.com.sales.code.bug.iam.service.PasswordHasher;
-import br.com.sales.code.bug.iam.service.PasswordHasherDigest;
 
 import java.util.*;
 
@@ -14,6 +13,15 @@ public class User {
     private PasswordHasher passwordHasher;
 
     public User(UUID id, String username, String email, String password, UserStatus status, Set<Role> roles, PasswordHasher passwordHasher) {
+
+        Objects.requireNonNull(passwordHasher, "Hasher inválido");
+        Objects.requireNonNull(id, "Id inválido");
+        Objects.requireNonNull(username, "Username inválido");
+        Objects.requireNonNull(email, "Email inválido");
+        Objects.requireNonNull(password, "Password inválido");
+        Objects.requireNonNull(status, "Status inválido");
+        Objects.requireNonNull(roles, "Roles inválido");
+
         this.passwordHasher = passwordHasher;
         this.id = id;
         this.username = username;
@@ -84,5 +92,22 @@ public class User {
         }
 
         return false;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        if (this == other)
+            return true;
+        if (other == null || this.getClass() != other.getClass())
+            return false;
+
+        var otherUser = (User)other;
+
+        return this.id.equals(otherUser.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return this.id.hashCode();
     }
 }
