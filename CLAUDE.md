@@ -60,6 +60,18 @@ Regras de comportamento como mentor:
   de status indevido em `allDistinctPermissionNames` (que deve varrer todos os usuários, não só os
   ativos) — bug que só apareceu porque o teste tinha sido escrito a partir da saída do código, não
   do enunciado. Enunciado completo abaixo.
+- ✅ **Exercício 3 (Fase 1) — CONCLUÍDO**: hierarquia de exceções de domínio (`DomainException` raiz,
+  unchecked; `UserNotFoundException`, `DuplicateUsernameException`, `UserWithoutRoleException`,
+  `UserNotActiveException` — que carrega o `UserStatus` —, `InvalidCredentialsException`) +
+  `AuthenticationService` (repo e `PasswordHasher` injetados; `authenticate` na ordem username →
+  status → senha). `UserRepository` ganhou `getById`/`findByUsername` que lançam, e `save` que
+  rejeita `username` duplicado via índice secundário `Map<String, UUID>` com limpeza da chave antiga
+  ao renomear. Revisão corrigiu: `Objects.requireNonNull` (não uma exceção de domínio) para
+  pré-condição mecânica no construtor de `User`, `UserWithoutRoleException` só para a invariante
+  "≥1 role"; bug de drift do índice de username (`Map.replace` não insere chave nova → `put` +
+  remoção da chave antiga); `switch` sem `default` no `authenticate` trocado por `!= ATIVO`
+  (fail-closed); mensagem de `findByUsername` que interpolava `null` em vez do username.
+  Enunciado completo abaixo.
 
 ---
 
@@ -114,14 +126,101 @@ Validar:
 
 ---
 
+## Exercício 3 — Tratamento de exceções
+
+**Objetivo:** revisar exceções em Java — hierarquia, checked vs unchecked, `try`/`catch`/`finally`,
+encadeamento de causa (construtor com `Throwable`), e mensagens com contexto útil. Substituir os
+retornos "silenciosos" e o `Objects.requireNonNull` genérico por erros que comunicam **qual regra
+de negócio** foi violada.
+
+### Contexto / ponto de partida
+- Hoje `UserRepository.save` só faz `Objects.requireNonNull(newUser, "Entidade inválida")`; a
+  validação de invariante vive no construtor de `User`, lançando `UserInvalidException` (atualmente
+  em `config/exception`, estende `RuntimeException`).
+- Não existe serviço de autenticação nem regra de unicidade de `username`.
+
+### O que implementar
+
+**1. Hierarquia de exceções de domínio**
+- Uma raiz comum — decida o nome (`DomainException`? `IamException`?) e o pacote (o atual
+  `config.exception` é adequado? `domain.exception`? um `exception` na raiz?).
+- Variantes, no mínimo:
+  - `UserNotFoundException` — busca por id/username que não existe.
+  - `DuplicateUsernameException` — `save` de um usuário com `username` já usado por **outro** id.
+  - `UserNotActiveException` / `UserNotActiveException` — login de usuário que não está `ATIVO`
+    (pense: `BLOQUEADO` e `PENDENTE` são o mesmo erro ou erros diferentes?).
+  - `InvalidCredentialsException` — senha não confere.
+- **Decisão central — checked vs unchecked** para cada uma, com justificativa em Javadoc curto:
+  - O que representa **erro de programação / pré-condição** violada? → família `RuntimeException`.
+  - O que representa **fluxo de negócio esperado** que todo chamador tem de tratar? → checked.
+  - `UserInvalidException` (a que já existe) se encaixa onde? Deve **entrar** nessa hierarquia
+    (virar filha da raiz) ou é outra categoria? Ela deve sair de `config.exception`?
+- Encadeamento: se alguma dessas exceções for lançada "por cima" de outra (um parser, um
+  `NumberFormatException`), preserve a causa original no construtor (`super(msg, cause)`).
+
+**2. Aplicar no `UserRepository`**
+- `findById` continua devolvendo `Optional` — mantenha. Adicione `User getById(UUID id)` que
+  **lança** `UserNotFoundException` quando ausente (contraste os dois estilos: `Optional` para
+  "pode não existir e tudo bem" vs exceção para "a essa altura tinha que existir").
+- `save` passa a rejeitar `username` duplicado. Isso exige detectar colisão de `username` — pense
+  na estrutura (varrer os values? um índice secundário `Map<String, UUID>`? qual o custo/risco de
+  manter dois mapas em sincronia?).
+- Troque o `Objects.requireNonNull` genérico por algo da hierarquia, se fizer sentido — ou
+  argumente por que a `NullPointerException` do `requireNonNull` já é a mensagem certa aqui.
+
+**3. `AuthenticationService` (mínimo)**
+- Construtor recebe `UserRepository` e `PasswordHasher` **por injeção** (convenção já fixada).
+- `User authenticate(String username, String password)` que:
+  - resolve o usuário por `username` → `UserNotFoundException` se não existe;
+  - verifica status → `UserNotActiveException` (ou a variante que você definir) se não `ATIVO`;
+  - confere a senha via `PasswordHasher` → `InvalidCredentialsException` se não bate.
+- **Mantenha simples de propósito:** o Exercício 4 vai remodelar esse mesmo resultado de login como
+  um `sealed interface LoginResult` (`Success`/`InvalidCredentials`/`UserBlocked`/`UserPending`).
+  Aqui o objetivo é só exercitar exceções — não construa máquina de estado, retry nem lockout
+  (isso é o Exercício 8).
+
+### Restrições de design
+- Nada de `catch (Exception e)` genérico "engolindo" erro; capture o tipo específico ou deixe
+  propagar.
+- Nada de exceção para **controle de fluxo normal** (ex: lançar e capturar `UserNotFoundException`
+  internamente onde um `Optional` resolveria).
+- Toda exceção da hierarquia carrega mensagem com contexto útil (qual username, qual id) — mas
+  **não vaze** hash de senha nem a senha em texto na mensagem.
+- Não regride nas convenções anteriores (imutabilidade, defensive copy, injeção por interface,
+  Javadoc do "porquê").
+
+### Teste de aceitação
+Cobrir cada caminho:
+1. `getById` com id inexistente lança `UserNotFoundException`; com id existente devolve o usuário.
+2. `save` de `username` já usado por **outro** id lança `DuplicateUsernameException`; `save` do
+   **mesmo** usuário (mesmo id) continua substituindo sem erro (não regrediu o Exercício 2).
+3. `authenticate` com username inexistente → `UserNotFoundException`.
+4. `authenticate` de usuário `BLOQUEADO` (e `PENDENTE`, se você os tratar) → a exceção de status
+   correspondente, **antes** de checar a senha.
+5. `authenticate` com senha errada → `InvalidCredentialsException`.
+6. `authenticate` com credenciais válidas de usuário `ATIVO` → sucesso, sem exceção.
+7. (Reconhecer bug) um teste que prove a **ordem** das checagens: usuário bloqueado + senha errada
+   deve lançar a de status, não a de credenciais — senão você revela "a senha estava certa/errada"
+   para uma conta que nem deveria logar.
+
+### Conexão com o domínio (CIAM)
+- Um authorization server (PingFederate, Keycloak) distingue internamente "usuário não existe",
+  "conta bloqueada" e "senha errada" — mas a resposta OAuth2 ao cliente costuma ser
+  **deliberadamente genérica** (`invalid_grant`), para não permitir enumeração de contas. O teste 7
+  é a versão local desse cuidado: a *ordem* e a *granularidade* do que você revela importam.
+- `Optional` vs exceção ecoa a diferença entre um endpoint de *lookup* ("pode não achar, 404 é
+  normal") e um passo de *fluxo de autenticação* ("se chegou aqui, tinha que existir").
+
+---
+
 ## Roteiro completo (para continuar após o Exercício 2)
 
 ### Fase 1 — Fundamentos revisitados
 - Exercício 1: modelagem de entidades (✅ concluído)
 - Exercício 2: coleções e streams (✅ concluído)
 - Exercício 3: tratamento de exceções — criar hierarquia de exceções de domínio
-  (`UserNotFoundException`, `DuplicateUsernameException`, `UserBlockedException` etc.) e aplicar
-  no `UserRepository`/serviço de autenticação.
+  (`UserNotFoundException`, `DuplicateUsernameException`, `UserNotActiveException` etc.) e aplicar
+  no `UserRepository`/serviço de autenticação. (✅ concluído)
 - Exercício 4: `sealed classes` e `pattern matching` (switch pattern matching) — modelar o
   resultado de uma tentativa de login como um `sealed interface LoginResult` com variantes
   (`Success`, `InvalidCredentials`, `UserBlocked`, `UserPending`).
@@ -163,7 +262,7 @@ Validar:
 
 ## Como continuar
 
-1. Ao iniciar, confirme com o usuário se ele quer seguir do Exercício 2 ou já entregar código para
-   revisão.
+1. Ao iniciar, veja em "Status atual" qual exercício está em andamento e confirme com o usuário se
+   ele quer seguir o enunciado ou já entregar código para revisão.
 2. Sempre que um exercício for concluído, atualize a seção "Status atual" deste arquivo e o
    roteiro (marcando com ✅) antes de propor o próximo, para manter o histórico da mentoria.

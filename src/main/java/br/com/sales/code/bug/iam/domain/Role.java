@@ -1,7 +1,6 @@
 package br.com.sales.code.bug.iam.domain;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class Role {
 
@@ -25,19 +24,16 @@ public class Role {
         return this.permissions.contains(new Permission(permissionName));
     }
 
-    /**
-     * A lista de permissions deve ser imutável para garantir que o usuário que o conjunto seja único, caso seja
-     * necessário adicionar outra permission deve ser criado uma nova Role para que a mudança seja sempre
-     * intencional e não por acidente
-     */
+     //A lista de permissions deve ser imutável para garantir que o usuário que o conjunto seja único, caso seja
+     //necessário adicionar outra permission deve ser criado uma nova Role para que a mudança seja sempre
+     //intencional e não por acidente
     public Set<Permission> getPermissions() {
         return this.permissions;
     }
 
-    /**
-     * A decisão por comparar o equals apenas com o name é porque neste momento o name funciona como um ID, mas deve ser
-     * refatorado conforme o projeto evoluir
-     */
+
+    //A decisão por comparar o equals apenas com o name é porque neste momento o name funciona como um ID, mas deve ser
+    //refatorado conforme o projeto evoluir
     @Override
     public boolean equals(Object other) {
         if (this == other)

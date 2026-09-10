@@ -1,26 +1,33 @@
 package br.com.sales.code.bug.iam.domain;
 
+import br.com.sales.code.bug.iam.domain.exception.UserWithoutRoleException;
 import br.com.sales.code.bug.iam.service.PasswordHasher;
 
 import java.util.*;
 
 public class User {
 
-    /**
-     * A decisão de tornar o PasswordHasher como uma interface foi para tornar a implementação tornar essa dependência menos acoplada,
-     * assim, tornando a criação de novas formas de criptografia mais fácil de ser implementada
-     */
+    //A decisão de tornar o PasswordHasher como uma interface foi para tornar a implementação tornar essa dependência menos acoplada,
+    //assim, tornando a criação de novas formas de criptografia mais fácil de ser implementada
     private PasswordHasher passwordHasher;
 
     public User(UUID id, String username, String email, String password, UserStatus status, Set<Role> roles, PasswordHasher passwordHasher) {
 
-        Objects.requireNonNull(passwordHasher, "Hasher inválido");
-        Objects.requireNonNull(id, "Id inválido");
-        Objects.requireNonNull(username, "Username inválido");
-        Objects.requireNonNull(email, "Email inválido");
-        Objects.requireNonNull(password, "Password inválido");
-        Objects.requireNonNull(status, "Status inválido");
-        Objects.requireNonNull(roles, "Roles inválido");
+        //Objects.requireNonNull está sendo usado por que não quebram regra de negócio, mas trazem dados inválidos
+        Objects.requireNonNull(passwordHasher, "Hasher é obrigatório.");
+        Objects.requireNonNull(id, "Id é obrigatório.");
+        Objects.requireNonNull(username, "Username é obrigatório.");
+        Objects.requireNonNull(email, "Email é obrigatório.");
+        Objects.requireNonNull(password, "Password é obrigatório.");
+        Objects.requireNonNull(status, "Status é obrigatório.");
+        Objects.requireNonNull(roles, "Roles é obrigatório.");
+
+        //Usei a exception de domínio para tratar de um objeto válido, mas incompleto que é necessário para a aplicação
+        //das regras de negócio
+        if (roles.isEmpty()) {
+            throw new UserWithoutRoleException("É obrigatório ao menos uma Role.");
+        }
+
 
         this.passwordHasher = passwordHasher;
         this.id = id;
@@ -28,9 +35,7 @@ public class User {
         this.email = email;
         this.passwordHash = passwordHasher.hash(password);
         this.status = status;
-        var newRoles = new HashSet<Role>();
-        newRoles.addAll(roles);
-        this.roles = Collections.unmodifiableSet(newRoles);
+        this.roles = Set.copyOf(roles);
     }
 
     private UUID id;

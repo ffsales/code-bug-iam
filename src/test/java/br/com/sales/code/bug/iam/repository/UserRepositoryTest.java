@@ -1,19 +1,22 @@
 package br.com.sales.code.bug.iam.repository;
 
-import br.com.sales.code.bug.iam.config.exception.UserInvalidException;
+import br.com.sales.code.bug.iam.domain.exception.UserWithoutRoleException;
 import br.com.sales.code.bug.iam.domain.Permission;
 import br.com.sales.code.bug.iam.domain.Role;
 import br.com.sales.code.bug.iam.domain.User;
 import br.com.sales.code.bug.iam.domain.UserStatus;
+import br.com.sales.code.bug.iam.domain.exception.DuplicateUsernameException;
+import br.com.sales.code.bug.iam.domain.exception.UserNotFoundException;
 import br.com.sales.code.bug.iam.service.PasswordHasher;
 import br.com.sales.code.bug.iam.service.PasswordHasherDigest;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 
 public class UserRepositoryTest {
@@ -28,8 +31,7 @@ public class UserRepositoryTest {
     private static final String MOCKED_ADMIN_PERMISSION_USER_READ = "user:read";
 
     @Test
-    public void shouldSaveUsersInRepository() throws UserInvalidException {
-
+    public void shouldSaveUsersInRepository() {
         var repository = new UserRepository();
 
         var adminUser = createUserAdminActive();
@@ -38,27 +40,62 @@ public class UserRepositoryTest {
         repository.save(adminUser);
         repository.save(commomUser);
 
-        Assertions.assertEquals(2, repository.findAll().size());
+        assertEquals(2, repository.findAll().size());
 
         var blockedUser = createUserCommomBlocked();
         repository.save(blockedUser);
 
-        Assertions.assertEquals(3, repository.findAll().size());
+        assertEquals(3, repository.findAll().size());
 
         var newCommomUser = new User(
                 commomUser.getId(),
-                commomUser.getUsername(),
+                "NOVO_COMMOM",
                 commomUser.getEmail(),
                 commomUser.getPasswordHash(),
                 commomUser.getStatus(),
                 commomUser.getRoles(),
                 passwordHasher);
         repository.save(newCommomUser);
-        Assertions.assertEquals(3, repository.findAll().size());
+        assertEquals(3, repository.findAll().size());
+
+        repository.save(new User(
+                UUID.randomUUID(),
+                commomUser.getUsername(),
+                commomUser.getEmail(),
+                commomUser.getPasswordHash(),
+                commomUser.getStatus(),
+                commomUser.getRoles(),
+                passwordHasher));
+        assertEquals(4, repository.findAll().size());
     }
 
     @Test
-    public void shouldDoNotModifyUserList() throws UserInvalidException {
+    public void shouldThrowExceptionWithNewUserWithSameUsername() {
+        var repository = new UserRepository();
+
+        var adminUser = createUserAdminActive();
+        var commomUser = createUserCommomActive();
+
+        repository.save(adminUser);
+        repository.save(commomUser);
+
+        var newUser = new User(
+                UUID.randomUUID(),
+                commomUser.getUsername(),
+                "newEmail",
+                "newuser123",
+                UserStatus.ATIVO,
+                commomUser.getRoles(),
+                passwordHasher
+        );
+
+        assertThrows(DuplicateUsernameException.class, () -> {
+            repository.save(newUser);
+        });
+    }
+
+    @Test
+    public void shouldDoNotModifyUserList() {
         var repository = new UserRepository();
 
         var adminUser = createUserAdminActive();
@@ -71,14 +108,14 @@ public class UserRepositoryTest {
 
         var blockedUser = createUserCommomBlocked();
 
-        Assertions.assertThrows(UnsupportedOperationException.class,() -> {
+        assertThrows(UnsupportedOperationException.class,() -> {
             allUsers.add(blockedUser);
         });
-        Assertions.assertEquals(2, allUsers.size());
+        assertEquals(2, allUsers.size());
     }
 
     @Test
-    public void shouldGetUsersByStatus() throws UserInvalidException {
+    public void shouldGetUsersByStatus()  {
         var repository = new UserRepository();
 
         var adminUser = createUserAdminActive();
@@ -90,11 +127,11 @@ public class UserRepositoryTest {
         repository.save(blockedUser);
 
         var users = repository.findByStatus(UserStatus.ATIVO);
-        Assertions.assertEquals(2, users.size());
+        assertEquals(2, users.size());
     }
 
     @Test
-    public void shouldGetUsersByRoleName() throws UserInvalidException {
+    public void shouldGetUsersByRoleName()  {
         var repository = new UserRepository();
 
         var adminUser = createUserAdminActive();
@@ -107,11 +144,11 @@ public class UserRepositoryTest {
 
         var users = repository.findByRoleName(new String("COMMOM_WRITE"));
 
-        Assertions.assertEquals(2, users.size());
+        assertEquals(2, users.size());
     }
 
     @Test
-    public void shouldGetMapUsersByStatus() throws UserInvalidException {
+    public void shouldGetMapUsersByStatus() {
         var repository = new UserRepository();
 
         var adminUser = createUserAdminActive();
@@ -123,7 +160,7 @@ public class UserRepositoryTest {
         repository.save(blockedUser);
 
         var usersByStatus = repository.groupByStatus();
-        Assertions.assertEquals(2, usersByStatus.get(UserStatus.ATIVO).size());
+        assertEquals(2, usersByStatus.get(UserStatus.ATIVO).size());
     }
 
     @Test
@@ -138,8 +175,8 @@ public class UserRepositoryTest {
 
         var foundUser = repository.findById(commomUser.getId());
 
-        Assertions.assertTrue(foundUser.isPresent());
-        Assertions.assertEquals(commomUser.getId(), foundUser.get().getId());
+        assertTrue(foundUser.isPresent());
+        assertEquals(commomUser.getId(), foundUser.get().getId());
 
         var newCommomUser = new User(
                 commomUser.getId(),
@@ -153,10 +190,10 @@ public class UserRepositoryTest {
         repository.save(newCommomUser);
 
         var newFoundUser = repository.findById(commomUser.getId());
-        Assertions.assertTrue(newFoundUser.isPresent());
-        Assertions.assertEquals(commomUser.getId(), newFoundUser.get().getId());
-        Assertions.assertEquals("NOVO USER", newFoundUser.get().getUsername());
-        Assertions.assertEquals("NOVO EMAIL", newFoundUser.get().getEmail());
+        assertTrue(newFoundUser.isPresent());
+        assertEquals(commomUser.getId(), newFoundUser.get().getId());
+        assertEquals("NOVO USER", newFoundUser.get().getUsername());
+        assertEquals("NOVO EMAIL", newFoundUser.get().getEmail());
     }
 
     @Test
@@ -173,8 +210,8 @@ public class UserRepositoryTest {
 
         var mapCount = repository.countUsersByRoleName();
 
-        Assertions.assertEquals(2, mapCount.get("COMMOM_WRITE"));
-        Assertions.assertEquals(1, mapCount.get("ADMIN"));
+        assertEquals(2, mapCount.get("COMMOM_WRITE"));
+        assertEquals(1, mapCount.get("ADMIN"));
     }
 
     @Test
@@ -192,8 +229,8 @@ public class UserRepositoryTest {
         repository.save(otherBlockedUser);
 
         var distinctPermissionNames = repository.allDistinctPermissionNames();
-        Assertions.assertEquals(3, distinctPermissionNames.size());
-        Assertions.assertEquals(List.of("admin", "user:read", "user:write"), distinctPermissionNames);
+        assertEquals(3, distinctPermissionNames.size());
+        assertEquals(List.of("admin", "user:read", "user:write"), distinctPermissionNames);
 
     }
 
@@ -211,8 +248,31 @@ public class UserRepositoryTest {
         repository.save(blockedUser);
         repository.save(otherBlockedUser);
 
-        Assertions.assertTrue(repository.anyUserHasPermission("user:write"));
-        Assertions.assertFalse(repository.anyUserHasPermission("user:read"));
+        assertTrue(repository.anyUserHasPermission("user:write"));
+        assertFalse(repository.anyUserHasPermission("user:read"));
+    }
+
+    @Test
+    public void shouldThrowExceptionInGetByIdWithNonExistsId() {
+        var repository = new UserRepository();
+
+        var adminUser = createUserAdminActive();
+        var commomUser = createUserCommomActive();
+        var blockedUser = createUserCommomBlocked();
+        var otherBlockedUser = createOtherUserCommomBlocked();
+
+        repository.save(adminUser);
+        repository.save(commomUser);
+        repository.save(blockedUser);
+        repository.save(otherBlockedUser);
+
+        var foundedUser = repository.getById(commomUser.getId());
+        assertNotNull(foundedUser);
+        assertEquals(commomUser.getUsername(), foundedUser.getUsername());
+
+        assertThrows(UserNotFoundException.class, () -> {
+            repository.getById(UUID.randomUUID());
+        });
     }
 
     private User createUserAdminActive() {

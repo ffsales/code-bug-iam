@@ -1,11 +1,13 @@
 package br.com.sales.code.bug.iam.domain;
 
+import br.com.sales.code.bug.iam.domain.exception.UserWithoutRoleException;
 import br.com.sales.code.bug.iam.service.PasswordHasher;
 import br.com.sales.code.bug.iam.service.PasswordHasherDigest;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.*;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 public class DomainTest {
 
@@ -22,7 +24,7 @@ public class DomainTest {
         var roles = createMockedSetRoles();
         var user = createMockedUser(roles);
 
-        Assertions.assertNotEquals(MOCKED_PASS, user.getPasswordHash());
+        assertNotEquals(MOCKED_PASS, user.getPasswordHash());
     }
 
     @Test
@@ -31,8 +33,8 @@ public class DomainTest {
         var roles = createMockedSetRoles();
         var user = createMockedUser(roles);
 
-        Assertions.assertTrue(user.hasPermission(MOCKED_ADMIN_PERMISSION_USER_WRITE));
-        Assertions.assertFalse(user.hasPermission(MOCKED_ADMIN_PERMISSION_USER_READ));
+        assertTrue(user.hasPermission(MOCKED_ADMIN_PERMISSION_USER_WRITE));
+        assertFalse(user.hasPermission(MOCKED_ADMIN_PERMISSION_USER_READ));
     }
 
     @Test
@@ -44,13 +46,13 @@ public class DomainTest {
         var newSetPermissions = new HashSet<Permission>();
         newSetPermissions.add(new Permission(MOCKED_ADMIN_PERMISSION_USER_READ));
 
-        Assertions.assertThrows(RuntimeException.class, () -> {
+        assertThrows(RuntimeException.class, () -> {
             user.getRoles().add(new Role("User", newSetPermissions));
         });
 
         roles.add(new Role("TESTE", newSetPermissions));
 
-        Assertions.assertFalse(user.hasPermission(MOCKED_ADMIN_PERMISSION_USER_READ));
+        assertFalse(user.hasPermission(MOCKED_ADMIN_PERMISSION_USER_READ));
     }
 
     @Test
@@ -65,12 +67,12 @@ public class DomainTest {
 
         user.addRole(newRole);
 
-        Assertions.assertTrue(user.hasPermission(MOCKED_ADMIN_PERMISSION_USER_READ));
+        assertTrue(user.hasPermission(MOCKED_ADMIN_PERMISSION_USER_READ));
 
         var otherNewRole = new Role("NEW_ROLE", newSetPermissions);
         user.removeRole(otherNewRole    );
 
-        Assertions.assertFalse(user.hasPermission(MOCKED_ADMIN_PERMISSION_USER_READ));
+        assertFalse(user.hasPermission(MOCKED_ADMIN_PERMISSION_USER_READ));
     }
 
     @Test
@@ -91,7 +93,50 @@ public class DomainTest {
         roles.add(role2);
 
 //        Assertions.assertEquals(2, roles.size());
-        Assertions.assertEquals(1, roles.size());
+        assertEquals(1, roles.size());
+    }
+
+    @Test
+    public void shouldThrowNullPointerExceptionWhenGiveInvalidData() {
+        var idNullException = assertThrows(NullPointerException.class, () -> {
+            new User(null, "Name", "Email", "Pass", UserStatus.ATIVO, Set.of(), passwordHasher);
+        });
+        assertEquals("Id é obrigatório.", idNullException.getMessage());
+
+        var usernameNullException = assertThrows(NullPointerException.class, () -> {
+           new User(UUID.randomUUID(), null, "Email", "Pass", UserStatus.ATIVO, Set.of(), passwordHasher);
+        });
+        assertEquals("Username é obrigatório.", usernameNullException.getMessage());
+
+        var emailNullException = assertThrows(NullPointerException.class, () -> {
+            new User(UUID.randomUUID(), "Name", null, "Pass", UserStatus.ATIVO, Set.of(), passwordHasher);
+        });
+        assertEquals("Email é obrigatório.", emailNullException.getMessage());
+
+        var passNullException = assertThrows(NullPointerException.class, () -> {
+            new User(UUID.randomUUID(), "Name", "Email", null, UserStatus.ATIVO, Set.of(), passwordHasher);
+        });
+        assertEquals("Password é obrigatório.", passNullException.getMessage());
+
+        var statusNullException = assertThrows(NullPointerException.class, () -> {
+            new User(UUID.randomUUID(), "Name", "Email", "Pass", null, Set.of(), passwordHasher);
+        });
+        assertEquals("Status é obrigatório.", statusNullException.getMessage());
+
+        var rolesNullException = assertThrows(NullPointerException.class, () -> {
+            new User(UUID.randomUUID(), "Name", "Email", "Pass", UserStatus.ATIVO, null, passwordHasher);
+        });
+        assertEquals("Roles é obrigatório.", rolesNullException.getMessage());
+
+        var hasherNullException = assertThrows(NullPointerException.class, () -> {
+            new User(UUID.randomUUID(), "NAME", "EMAIL", "PASS", UserStatus.ATIVO, Set.of(new Role("name", Set.of())), null);
+        });
+        assertEquals("Hasher é obrigatório.", hasherNullException.getMessage());
+
+        var withoutRoleException = assertThrows(UserWithoutRoleException.class, () -> {
+            new User(UUID.randomUUID(), "NAME", "EMAIL", "PASS", UserStatus.ATIVO, Set.of(), passwordHasher);
+        });
+        assertEquals("É obrigatório ao menos uma Role.", withoutRoleException.getMessage());
     }
 
     private User createMockedUser(Set<Role> setRoles) {
