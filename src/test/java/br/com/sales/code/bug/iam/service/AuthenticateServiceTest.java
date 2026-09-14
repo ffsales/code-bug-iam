@@ -1,8 +1,6 @@
 package br.com.sales.code.bug.iam.service;
 
-import br.com.sales.code.bug.iam.domain.Role;
-import br.com.sales.code.bug.iam.domain.User;
-import br.com.sales.code.bug.iam.domain.UserStatus;
+import br.com.sales.code.bug.iam.domain.*;
 import br.com.sales.code.bug.iam.domain.exception.InvalidCredentialsException;
 import br.com.sales.code.bug.iam.domain.exception.UserNotActiveException;
 import br.com.sales.code.bug.iam.domain.exception.UserNotFoundException;
@@ -104,5 +102,66 @@ public class AuthenticateServiceTest {
             authenticateService.authenticate("name", "wrong");
         });
         assertEquals("O status do usuário é: BLOQUEADO.", blockedException.getMessage());
+    }
+
+    @Test
+    public void shouldReturnUserNotFoundInTryAuthenticate() {
+        var userRepository = new UserRepository();
+        var passwordHasher = new PasswordHasherDigest();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher);
+
+        var result = authenticateService.tryAuthenticate("teste", "teste");
+        assertNotNull(result);
+        assertInstanceOf(UserNotFound.class, result);
+    }
+
+    @Test
+    public void shouldReturnUserBlockedInTryAuthenticate() {
+        var userRepository = new UserRepository();
+        var passwordHasher = new PasswordHasherDigest();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher);
+
+        var id = UUID.randomUUID();
+        var role = new Role("role", Set.of());
+        var user = new User(id, "name", "email", "pass", UserStatus.BLOQUEADO, Set.of(role), passwordHasher);
+        userRepository.save(user);
+
+        var result = authenticateService.tryAuthenticate("name", "teste");
+        assertNotNull(result);
+        assertInstanceOf(UserBlocked.class, result);
+        assertEquals("name", ((UserBlocked)result).username());
+    }
+
+    @Test
+    public void shouldReturnUserPendingInTryAuthenticate() {
+        var userRepository = new UserRepository();
+        var passwordHasher = new PasswordHasherDigest();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher);
+
+        var id = UUID.randomUUID();
+        var role = new Role("role", Set.of());
+        var user = new User(id, "name", "email", "pass", UserStatus.PENDENTE, Set.of(role), passwordHasher);
+        userRepository.save(user);
+
+        var result = authenticateService.tryAuthenticate("name", "teste");
+        assertNotNull(result);
+        assertInstanceOf(UserPending.class, result);
+        assertEquals("name", ((UserPending)result).username());
+    }
+
+    @Test
+    public void shouldReturnInvalidCredentialsInTryAuthenticate() {
+        var userRepository = new UserRepository();
+        var passwordHasher = new PasswordHasherDigest();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher);
+
+        var id = UUID.randomUUID();
+        var role = new Role("role", Set.of());
+        var user = new User(id, "name", "email", "pass", UserStatus.ATIVO, Set.of(role), passwordHasher);
+        userRepository.save(user);
+
+        var result = authenticateService.tryAuthenticate("name", "error");
+        assertNotNull(result);
+        assertInstanceOf(InvalidCredentials.class, result);
     }
 }

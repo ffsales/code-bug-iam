@@ -115,12 +115,24 @@ public class UserRepository implements EntityRepository<User> {
                 .anyMatch(user -> user.hasPermission(permissionName));
     }
 
-    public User findByUsername(String username) {
+    /**
+     * Nome alterado para manter o mesmo padrão de getById/FindById
+     */
+    public User getByUsername(String username) {
         var id = this.mapUsersByName.get(username);
         if (Objects.isNull(id)) {
             throw new UserNotFoundException("Username %s não encontrado".formatted(username));
         }
 
         return this.findById(id).get();
+    }
+
+    public Optional<User> findByUsername(String username) {
+        var id = this.mapUsersByName.get(username);
+        if (Objects.isNull(id)) {
+            return Optional.empty();
+        }
+
+        return this.findById(id);
     }
 }

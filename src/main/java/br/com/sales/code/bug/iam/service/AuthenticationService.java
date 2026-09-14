@@ -1,7 +1,6 @@
 package br.com.sales.code.bug.iam.service;
 
-import br.com.sales.code.bug.iam.domain.User;
-import br.com.sales.code.bug.iam.domain.UserStatus;
+import br.com.sales.code.bug.iam.domain.*;
 import br.com.sales.code.bug.iam.domain.exception.InvalidCredentialsException;
 import br.com.sales.code.bug.iam.domain.exception.UserNotActiveException;
 import br.com.sales.code.bug.iam.repository.UserRepository;
@@ -18,7 +17,7 @@ public class AuthenticationService {
 
     public User authenticate(String username, String password) {
 
-        var user = userRepository.findByUsername(username);
+        var user = userRepository.getByUsername(username);
         if (!UserStatus.ATIVO.equals(user.getStatus())) {
             throw new UserNotActiveException("O status do usuário é: %s.".formatted(user.getStatus()), user.getStatus());
         }
@@ -30,6 +29,28 @@ public class AuthenticationService {
         }
 
         return user;
+    }
+
+    public LoginResult tryAuthenticate(String username, String password) {
+        var optUser = userRepository.findByUsername(username);
+
+        if (optUser.isEmpty())
+            return new UserNotFound(username);
+
+        var user = optUser.get();
+
+        if (UserStatus.BLOQUEADO.equals(user.getStatus()))
+            return new UserBlocked(username);
+
+        if (UserStatus.PENDENTE.equals(user.getStatus()))
+            return new UserPending(username);
+
+        var passHash = this.passwordHasher.hash(password);
+
+        if (!user.getPasswordHash().equals(passHash))
+            return new InvalidCredentials();
+
+        return new Success(user);
     }
 }
 
