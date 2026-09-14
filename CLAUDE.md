@@ -64,13 +64,26 @@ Regras de comportamento como mentor:
   unchecked; `UserNotFoundException`, `DuplicateUsernameException`, `UserWithoutRoleException`,
   `UserNotActiveException` — que carrega o `UserStatus` —, `InvalidCredentialsException`) +
   `AuthenticationService` (repo e `PasswordHasher` injetados; `authenticate` na ordem username →
-  status → senha). `UserRepository` ganhou `getById`/`findByUsername` que lançam, e `save` que
+  status → senha). `UserRepository` ganhou `getById`/`getByUsername` que lançam, e `save` que
   rejeita `username` duplicado via índice secundário `Map<String, UUID>` com limpeza da chave antiga
   ao renomear. Revisão corrigiu: `Objects.requireNonNull` (não uma exceção de domínio) para
   pré-condição mecânica no construtor de `User`, `UserWithoutRoleException` só para a invariante
   "≥1 role"; bug de drift do índice de username (`Map.replace` não insere chave nova → `put` +
   remoção da chave antiga); `switch` sem `default` no `authenticate` trocado por `!= ATIVO`
-  (fail-closed); mensagem de `findByUsername` que interpolava `null` em vez do username.
+  (fail-closed); mensagem de `getByUsername` que interpolava `null` em vez do username.
+  Enunciado completo abaixo.
+- ✅ **Exercício 4 (Fase 1) — CONCLUÍDO**: `sealed interface LoginResult permits InvalidCredentials,
+  Success, UserBlocked, UserNotFound, UserPending` (todas `record`, `permits` explícito) +
+  `AuthenticationService.tryAuthenticate` retornando a variante ao lado do `authenticate` que lança
+  + `ConsumerLogin.describe` com `switch` exaustivo (sem `default`) usando record deconstruction em
+  `Success`. Decisões justificadas em Javadoc: `UserBlocked`/`UserPending` mantidas separadas (a
+  variante já é o estado, dispensa carregar `UserStatus`); `UserNotFound` como variante (situação
+  esperada, não erro de uso). Revisão corrigiu: `Sucess` → `Success` (typo no nome da classe);
+  `UserNotFound` era construído a partir de um `try/catch` de `UserNotFoundException` dentro do
+  `tryAuthenticate` — controle de fluxo via exceção, o que o próprio Exercício 3 havia banido;
+  resolvido com `UserRepository.findByUsername` devolvendo `Optional<User>` (espelhando
+  `findById`/`getById`), mantendo `tryAuthenticate` livre de exceções. `pom.xml` subiu para Java 21
+  (pattern matching for switch e record patterns só são standard feature a partir daí).
   Enunciado completo abaixo.
 
 ---
@@ -213,6 +226,76 @@ Cobrir cada caminho:
 
 ---
 
+## Exercício 4 — `sealed` e pattern matching
+
+**Objetivo:** revisar `sealed interface`/`sealed class` + `permits`, `record` como variante de tipo
+soma, e `switch` pattern matching (expressão, record deconstruction, `when` guard, exaustividade
+checada pelo compilador). Modelar o resultado de um login como **dado**, não como exceção.
+
+### Contexto / ponto de partida
+- `AuthenticationService.authenticate(username, password)` hoje **lança**
+  `UserNotFoundException` / `UserNotActiveException` / `InvalidCredentialsException` e retorna `User`
+  no sucesso.
+- `UserNotActiveException` já carrega um campo `UserStatus` — decisão que se repete aqui.
+
+### O que implementar
+
+**1. `sealed interface LoginResult`**
+- Variantes (mínimo do roteiro): `Success`, `InvalidCredentials`, `UserBlocked`, `UserPending`.
+  - `Success` carrega o `User` autenticado (`record Success(User user) implements LoginResult`).
+  - As demais podem ou não carregar payload (ex: `username` para log). Decida.
+- Decisões de design a justificar em Javadoc curto:
+  - **Forma de cada variante**: `record` (imutável, sem boilerplate) vs. classe `final`. Para
+    variantes sem dado, `record` sem componentes vs. singleton. Qual e por quê?
+  - **`UserBlocked` + `UserPending` separados, ou um `UserNotActive(UserStatus status)`?** Você
+    escolheu carregar o `UserStatus` na exceção do Exercício 3 — seja consistente ou explique a
+    divergência. O roteiro pede 4 variantes; a decisão é sua.
+  - **`UserNotFound` entra como variante?** Username inexistente é "um desfecho normal de uma
+    tentativa de login" (→ variante) ou "erro de uso da API" (→ continua exceção)? Argumente.
+  - `permits` explícito ou variantes aninhadas na interface — escolha um estilo.
+
+**2. `LoginResult tryAuthenticate(String username, String password)`**
+- Método **novo**, ao lado do `authenticate` que lança — os dois coexistem para comparar as
+  abordagens. **Não apague** o `authenticate`.
+- Mesmas checagens, **mesma ordem** (username → status → senha), mas **retorna** a variante.
+
+**3. Um consumidor com `switch` pattern matching exaustivo**
+- Um método (ex: `String describe(LoginResult r)` ou algo que produza uma decisão) que faz
+  `switch` sobre `LoginResult` **sem `default`**, cobrindo todas as variantes.
+- Exercite: `switch` como expressão; record deconstruction (`case Success(User user) -> ...`); um
+  `when` guard se fizer sentido (ex: `case Success s when s.user().getRoles().isEmpty() -> ...`).
+
+### Restrições de design
+- **Proibido `default`** no `switch` sobre `LoginResult` — a exaustividade checada pelo compilador
+  é o ponto do exercício. Adicionar uma variante nova deve **quebrar a compilação** de quem não a
+  tratou (é o recurso, não um bug).
+- Nada de `instanceof` encadeado com cast manual — pattern matching em `switch`/`if`.
+- Todas as variantes imutáveis (`record` já garante; classe → `final` + campos `final`).
+- Não regride nas convenções anteriores.
+
+### Teste de aceitação
+1. `tryAuthenticate` com username inexistente → `UserNotFound` (ou documentar por que continua
+   exceção e testar isso).
+2. usuário `BLOQUEADO` → `UserBlocked` (ou `UserNotActive` com status `BLOQUEADO`).
+3. usuário `PENDENTE` → `UserPending` (ou `UserNotActive` com status `PENDENTE`).
+4. senha errada → `InvalidCredentials`.
+5. credenciais válidas → `Success`; o `switch` do consumidor extrai o `User` via record pattern e
+   `Success.user()` é o esperado.
+6. ordem preservada: `BLOQUEADO` + senha errada → `UserBlocked`, não `InvalidCredentials`.
+7. (exaustividade — verificação manual, registre no PR/comentário) comentar um `case` do `switch`
+   do consumidor e confirmar que **não compila**.
+
+### Conexão com o domínio (CIAM)
+- SDKs de autenticação modelam o desfecho como tipo soma: sucesso com tokens, ou erro tipado
+  (`interaction_required`, `login_required`, `mfa_required`...). O `switch` exaustivo obriga a
+  tratar cada caso — o compilador vira parte da revisão de segurança.
+- Exceção vs. `LoginResult`: exceção serve para "isso não deveria acontecer, interrompa o fluxo";
+  tipo-resultado serve para "esse é um dos desfechos normais e o chamador **tem** que decidir o que
+  fazer com cada um". Login falho é rotina, não excepcional. Discuta onde cada estilo cabe — e por
+  que manter o `authenticate` que lança ainda faz sentido como atalho para o caminho feliz.
+
+---
+
 ## Roteiro completo (para continuar após o Exercício 2)
 
 ### Fase 1 — Fundamentos revisitados
@@ -223,7 +306,7 @@ Cobrir cada caminho:
   no `UserRepository`/serviço de autenticação. (✅ concluído)
 - Exercício 4: `sealed classes` e `pattern matching` (switch pattern matching) — modelar o
   resultado de uma tentativa de login como um `sealed interface LoginResult` com variantes
-  (`Success`, `InvalidCredentials`, `UserBlocked`, `UserPending`).
+  (`Success`, `InvalidCredentials`, `UserBlocked`, `UserPending`). (✅ concluído)
 
 ### Fase 2 — Intermediário
 - Exercício 5: Generics — criar um `Repository<T, ID>` genérico e fazer `UserRepository` implementá-lo.
