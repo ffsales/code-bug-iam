@@ -54,3 +54,4 @@ Thumbs.db
 ## IntelliJ IDEA XML config files
 #############################################
 .idea/*.xml
+.idea/misc.xml
