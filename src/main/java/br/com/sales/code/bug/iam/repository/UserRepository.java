@@ -7,9 +7,10 @@ import br.com.sales.code.bug.iam.domain.exception.DuplicateUsernameException;
 import br.com.sales.code.bug.iam.domain.exception.UserNotFoundException;
 
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
-public class UserRepository implements EntityRepository<User> {
+public class UserRepository implements Repository<User, UUID> {
 
     //A decisão por usar um Map permite acelerar a busca e substituir um user caso seja inserido outro com o mesmo id
     private final Map<UUID, User> mapUsersById;
@@ -30,6 +31,7 @@ public class UserRepository implements EntityRepository<User> {
         return Optional.ofNullable(this.mapUsersById.get(id));
     }
 
+    @Override
     public User getById(UUID id) {
         var user = this.mapUsersById.get(id);
         if (Objects.isNull(user)) {
@@ -134,5 +136,25 @@ public class UserRepository implements EntityRepository<User> {
         }
 
         return this.findById(id);
+    }
+
+    // Ajustei o método para validar duplicatas na lista de saveAll e reutilizei a exception que já existei para
+    // esse propósito
+    @Override
+    public void saveAll(Collection<? extends User> entities) {
+        Objects.requireNonNull(entities, "A lista de usuários não pode ser nula");
+
+        entities.stream()
+                .collect(Collectors.toMap(
+                        User::getUsername,
+                        Function.identity(),
+                        (primeiro, segundo) -> {
+                            if (!primeiro.equals(segundo))
+                                throw new DuplicateUsernameException("O username %s está duplicado na lista".formatted(primeiro.getUsername()));
+
+                            return null;
+                        }
+                ));
+        entities.forEach(this::save);
     }
 }

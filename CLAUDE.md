@@ -85,6 +85,29 @@ Regras de comportamento como mentor:
   `findById`/`getById`), mantendo `tryAuthenticate` livre de exceções. `pom.xml` subiu para Java 21
   (pattern matching for switch e record patterns só são standard feature a partir daí).
   Enunciado completo abaixo.
+- ✅ **Exercício 5 (Fase 2) — CONCLUÍDO**: `EntityRepository<T>` generalizado para
+  `Repository<T, ID>` (`save`, `findById`, `getById`, `findAll`, `saveAll` com bounded wildcard
+  `Collection<? extends T>` subindo para a interface) + `UserRepository implements
+  Repository<User, UUID>` + `RoleRepository implements Repository<Role, String>` como segundo
+  repositório, provando que a abstração não fica amarrada a `UUID` (usa o nome da `Role` como
+  identidade). Exceção de "não encontrado" no mundo genérico resolvida com
+  `EntityNotFoundException` como nova raiz entre `DomainException` e as exceções específicas
+  (`UserNotFoundException`, `RoleNotFoundException`), preservando o vocabulário de domínio sem
+  duplicar a decisão checked/unchecked do Exercício 3. Revisão passou por 4 rodadas corrigindo:
+  `saveAll` de `UserRepository` reimplementava a inserção em vez de reusar `save`, bypassando a
+  validação de `username` duplicado e reintroduzindo o bug de drift do índice secundário do
+  Exercício 3 — corrigido delegando para `this::save` no `forEach`, com checagem extra de
+  duplicidade **dentro do próprio lote** via `Collectors.toMap` (usando `User.equals` por `id` no
+  merge function para não confundir "duplicata real" com "mesma entidade duas vezes no lote");
+  um marker interface `Entity` criado sem uso real (nenhum bound, aplicado só em `Role` e não em
+  `User`) foi removido em vez de mantido pela metade; bound `ID extends Comparable<ID>` foi
+  proposto sem nenhum método da interface usar `compareTo`, e removido; um teste
+  (`shouldSaveListOfUsers`) que assumia ordem de iteração de `HashMap.values()` — flaky, chegou a
+  falhar em uma rodada — corrigido para buscar por `username` via `filter`/`findFirst` em vez de
+  indexar a lista. Enunciado completo abaixo.
+- 🔄 **Exercício 6 (Fase 2) — EM ANDAMENTO**: revisar uso idiomático de `Optional` nos métodos de
+  busca (`getById`, `getByUsername`, `tryAuthenticate`), eliminando `.get()` cru e o padrão
+  `isEmpty()` + `.get()`. Enunciado completo abaixo.
 
 ---
 
@@ -296,6 +319,162 @@ checada pelo compilador). Modelar o resultado de um login como **dado**, não co
 
 ---
 
+## Exercício 5 — Generics
+
+**Objetivo:** revisar generics — bounded type parameters, e projetar uma abstração reutilizável
+(`Repository<T, ID>`) generalizando o que já existe, em vez de criar do zero.
+
+### Contexto / ponto de partida
+- `EntityRepository<T>` hoje é genérico só na entidade; o id está hardcoded em `UUID`
+  (`Optional<T> findById(UUID id)`).
+- `UserRepository` mistura, na mesma classe, métodos que são de repositório genérico (`save`,
+  `findById`, `findAll`) com métodos específicos de `User` (`getById`, `getByUsername`,
+  `findByUsername`, `findByStatus`, `findByRoleName`, `groupByStatus`, `countUsersByRoleName`,
+  `allDistinctPermissionNames`, `anyUserHasPermission`).
+
+### O que implementar
+
+**1. Generalizar `EntityRepository<T>` → `Repository<T, ID>`**
+- `void save(T entity)`
+- `Optional<T> findById(ID id)`
+- `T getById(ID id)` — hoje só existe em `UserRepository`; decida se sobe para a interface (e o
+  que isso implica na exceção — ver abaixo).
+- `List<T> findAll()`
+- `ID` precisa de algum *bound*? Java não deixa declarar "requer `equals`/`hashCode` consistentes"
+  como bound — mas pense se faz sentido um `ID extends Comparable<ID>`, ou se `ID` solto (só
+  `Object` implícito) é suficiente para o que a interface realmente usa.
+
+**2. A exceção de "não encontrado" no mundo genérico**
+- `UserNotFoundException` é específica de `User` e carrega significado de domínio (username, id).
+  Se `getById` genérico for para a interface, o que ela lança quando não encontra? Opções: uma
+  `EntityNotFoundException` genérica (perde o vocabulário de domínio); cada implementação continua
+  lançando a sua própria (a interface só documenta "lança unchecked, tipo definido pela
+  implementação"); ou outra que você imaginar. Justifique em Javadoc — é a mesma discussão
+  checked/unchecked do Exercício 3, agora sob o ângulo de genéricos.
+
+**3. `UserRepository implements Repository<User, UUID>`**
+- Os métodos genéricos migram para a assinatura da interface; os específicos de `User` continuam
+  como métodos próprios da classe, fora da interface.
+
+**4. Um segundo repositório genérico, para provar que a abstração generaliza**
+- Não precisa ser elaborado. Ideia: um `RoleRepository implements Repository<Role, String>`, usando
+  o nome da role como id (`Role.equals`/`hashCode` já são por nome — ele serve como identidade?).
+  O ponto é ter evidência de que `Repository<T, ID>` funciona com um `ID` que não é `UUID`.
+
+**5. (opcional) Bounded wildcard**
+- Um `saveAll(Collection<? extends T> entities)` na interface ou em `UserRepository`, pensando em
+  variância: por que `? extends T` e não `T` puro faz sentido para um parâmetro de entrada?
+
+### Restrições de design
+- Sem vazamento de type erasure: nada de `Object` bruto, cast manual ou
+  `@SuppressWarnings("unchecked")` para contornar o compilador — se sentir necessidade de um cast,
+  o bound provavelmente está errado.
+- Não duplique contrato: um método que já existe na interface genérica não deve ser redeclarado na
+  implementação com assinatura diferente.
+- **Não regride**: os testes de `UserRepository`/`AuthenticationService`/`ConsumerLogin` dos
+  Exercícios 2–4 continuam verdes sem mudar asserção — isso é refatoração de estrutura, não de
+  regra de negócio.
+
+### Teste de aceitação
+1. `UserRepository implements Repository<User, UUID>` compila e toda a suíte existente (Ex2–Ex4)
+   continua passando sem alteração de asserção.
+2. Um segundo tipo de repositório com `ID` diferente de `UUID`, com teste de
+   `save`/`findById`/`getById`/`findAll` provando que a abstração não está amarrada a `UUID`.
+3. (verificação manual, registre) tente forçar um cast indevido ou um `ID` incompatível e confirme
+   que o compilador recusa — não precisa de teste automatizado, só de você ver o bound funcionando.
+
+### Conexão com o domínio (CIAM)
+- `Repository<T, ID>` é o mesmo formato do `JpaRepository<T, ID>` do Spring Data, que você vai usar
+  de verdade no Exercício 16. Parametrizar o `ID` à parte (em vez de assumir sempre `UUID` ou
+  `Long`) evita acoplar a camada de persistência ao tipo de chave primária de um banco específico.
+- Em identity providers reais, um usuário pode ser identificado por `sub` (string opaca do OIDC),
+  um `UUID` interno, ou um `Long` de banco legado — a mesma abstração de repositório genérico é o
+  que permite trocar isso sem reescrever a camada de acesso a dados.
+
+---
+
+## Exercício 6 — `Optional`
+
+**Objetivo:** revisar o uso idiomático de `Optional` — encadear (`map`, `filter`, `orElseThrow`,
+`orElseGet`) em vez de checar com `isPresent`/`isEmpty` e acessar com `.get()` cru, e reconhecer
+onde `Optional` **não** deveria ser usado.
+
+### Contexto / ponto de partida
+Pontos concretos no código atual que usam `Optional` de forma manual, não encadeada:
+- `UserRepository.getById` e `RoleRepository.getById` **reimplementam** a busca — acessam o `Map`
+  diretamente e fazem `Objects.isNull(x)` + `throw` — em vez de reaproveitar `findById(id)`, que já
+  devolve `Optional<T>` e já existe na própria classe.
+- `UserRepository.getByUsername`:
+  ```java
+  return this.findById(id).get();
+  ```
+  um `.get()` sem checagem — funciona porque `id` veio do índice `mapUsersByName` e "sempre" existe
+  em `mapUsersById`, mas é exatamente o tipo de suposição que, se a invariante entre os dois mapas
+  quebrar um dia (ex: um bug futuro no `saveAll`), vira `NoSuchElementException` sem contexto
+  nenhum de domínio, em vez de uma exceção que diga qual username falhou.
+- `AuthenticationService.tryAuthenticate`:
+  ```java
+  var optUser = userRepository.findByUsername(username);
+  if (optUser.isEmpty())
+      return new UserNotFound(username);
+  var user = optUser.get();
+  ```
+  o padrão clássico `isEmpty()` + `.get()` que o `Optional` foi desenhado para substituir.
+- (bônus do Exercício 5) `orElseGet(null)` num teste — `orElseGet` espera um `Supplier`, não um
+  valor pronto; `null` aí é o método errado, não só um valor perigoso.
+
+### O que implementar
+1. **`getById` sem duplicar a busca**: refatore `UserRepository.getById` e `RoleRepository.getById`
+   para chamar `findById(id)` e encadear até a exceção (`orElseThrow`), em vez de acessar o `Map`
+   de novo. Pense: isso é natural de subir como método `default` na interface `Repository<T, ID>`
+   (recebendo um `Supplier<? extends RuntimeException>`, por exemplo) ou cada implementação deve
+   continuar decidindo sozinha qual exceção lançar? Argumente a escolha.
+2. **`getByUsername` sem `.get()` cru**: troque por um encadeamento que não dependa de "eu sei que
+   está presente" — pense em `Optional<UUID>` → `flatMap`/`map` até `Optional<User>` →
+   `orElseThrow`, sem nunca chamar `.get()`.
+3. **`tryAuthenticate` sem `isEmpty()` + `.get()`**: refatore para não extrair o valor manualmente
+   antes de saber que ele existe. Cuidado: as checagens seguintes (`BLOQUEADO`, `PENDENTE`, senha)
+   dependem do `User` já desembrulhado e continuam precisando rodar **na mesma ordem** — pense se
+   dá para fazer tudo em uma cadeia de `Optional` ou se, nesse caso específico, um
+   `if (optUser.isEmpty()) return ...; var user = optUser.get();` bem no início (só para
+   "desembrulhar e seguir com múltiplos ifs depois") já é aceitável, e por quê.
+4. **Onde `Optional` não deveria aparecer**: confira o restante do código (domain, service) — campo
+   de entidade, parâmetro de método, elemento de `List`/`Set` são os três lugares clássicos onde
+   `Optional` é usado errado. Se não encontrar nenhum caso desses no projeto atual, documente por
+   que não (ex: "nenhum campo de `User`/`Role` é opcional por design").
+
+### Restrições de design
+- Proibido `Optional.get()` sem checagem prévia — e mesmo com checagem, prefira `orElseThrow`/`map`
+  a `isPresent`/`isEmpty` + acesso direto sempre que o fluxo permitir.
+- `orElse` para valor pronto (barato); `orElseGet` só quando o valor default é caro de computar
+  (lazy, só roda se precisar).
+- `Optional` nunca como campo de entidade, parâmetro de método ou elemento de coleção.
+- Não regride: as suítes de `UserRepository`/`RoleRepository`/`AuthenticationService`/
+  `ConsumerLogin` continuam verdes sem mudar asserção — é refatoração de estilo, não de regra de
+  negócio.
+
+### Teste de aceitação
+1. `getById` (`User` e `Role`) continua lançando a exceção certa (`UserNotFoundException` /
+   `RoleNotFoundException`) para id/nome inexistente, e devolvendo a entidade certa quando existe —
+   sem alteração de asserção nos testes já existentes.
+2. `getByUsername` continua lançando `UserNotFoundException` para username inexistente.
+3. `tryAuthenticate` continua com os 6 cenários do Exercício 4 passando (`UserNotFound`,
+   `UserBlocked`, `UserPending`, `InvalidCredentials`, `Success`, e a ordem
+   bloqueado-antes-de-senha-errada) sem alteração de asserção.
+4. (verificação manual, registre) grep por `.get()` em cima de `Optional` no projeto — deve sobrar
+   zero fora de teste.
+
+### Conexão com o domínio (CIAM)
+- SDKs OAuth2/OIDC devolvem estruturas parecidas com `Optional` para claims opcionais de um
+  `id_token` (`nickname`, `picture`, etc.) — tratar isso com `.get()` cru é a mesma classe de bug
+  que causa `NullPointerException` em produção quando um IdP simplesmente não popula um claim
+  opcional que o código assumia sempre presente.
+- A diferença entre "isso pode não existir e tudo bem" (`Optional`, lookup) e "isso não deveria
+  faltar aqui" (exceção, `orElseThrow`) é a mesma discussão do Exercício 3 sobre `Optional` vs
+  exceção — aqui ela aparece dentro do próprio código de busca, não só na fronteira do serviço.
+
+---
+
 ## Roteiro completo (para continuar após o Exercício 2)
 
 ### Fase 1 — Fundamentos revisitados
@@ -310,8 +489,10 @@ checada pelo compilador). Modelar o resultado de um login como **dado**, não co
 
 ### Fase 2 — Intermediário
 - Exercício 5: Generics — criar um `Repository<T, ID>` genérico e fazer `UserRepository` implementá-lo.
+  (✅ concluído)
 - Exercício 6: `Optional` — revisar uso correto (evitar `Optional.get()` sem checagem, encadear
-  `map`/`orElseThrow`) refatorando os métodos de busca.
+  `map`/`orElseThrow`) refatorando os métodos de busca. (🔄 em andamento — enunciado detalhado
+  acima)
 - Exercício 7: I/O e NIO.2 — persistir/carregar o estado do repositório em um arquivo JSON simples
   (sem framework, usando `java.nio.file`).
 - Exercício 8: Concorrência básica — simular tentativas de login concorrentes com

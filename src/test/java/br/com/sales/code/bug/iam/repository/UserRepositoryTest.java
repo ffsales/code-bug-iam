@@ -1,6 +1,5 @@
 package br.com.sales.code.bug.iam.repository;
 
-import br.com.sales.code.bug.iam.domain.exception.UserWithoutRoleException;
 import br.com.sales.code.bug.iam.domain.Permission;
 import br.com.sales.code.bug.iam.domain.Role;
 import br.com.sales.code.bug.iam.domain.User;
@@ -273,6 +272,92 @@ public class UserRepositoryTest {
         assertThrows(UserNotFoundException.class, () -> {
             repository.getById(UUID.randomUUID());
         });
+    }
+
+    @Test
+    public void shouldSaveListOfUsers() {
+        var repository = new UserRepository();
+
+        var adminUser = createUserAdminActive();
+        var commomUser = createUserCommomActive();
+
+        repository.saveAll(List.of(adminUser, commomUser));
+
+        var listUsers = repository.findAll();
+
+        assertNotNull(listUsers);
+        assertEquals(2, listUsers.size());
+        var foundUserAdmin = listUsers.stream().filter(user -> user.getUsername().equals("user_admin_1")).findFirst().orElse(null);
+        var foundUserCommom = listUsers.stream().filter(user -> user.getUsername().equals("user_commom_1")).findFirst().orElse(null);
+        assertEquals("user_admin_1", foundUserAdmin.getUsername());
+        assertEquals("user_commom_1", foundUserCommom.getUsername());
+    }
+
+    @Test
+    public void shouldThrowDuplicateUsernameExceptionWhenSaveListOfUsersWithSameUsername() {
+        var repository = new UserRepository();
+
+        var adminUser = createUserAdminActive();
+
+        var admin_v2 = new User(
+                adminUser.getId(),
+                "user_admin_2",
+                adminUser.getEmail(),
+                adminUser.getPasswordHash(),
+                adminUser.getStatus(),
+                adminUser.getRoles(),
+                passwordHasher
+                );
+
+        var admin_v3 = new User(
+                UUID.randomUUID(),
+                "user_admin_2",
+                adminUser.getEmail(),
+                adminUser.getPasswordHash(),
+                adminUser.getStatus(),
+                adminUser.getRoles(),
+                passwordHasher
+        );
+
+        var exception = assertThrows(DuplicateUsernameException.class, () -> {
+            repository.saveAll(List.of(admin_v2, admin_v3));
+        });
+
+        assertTrue(exception instanceof DuplicateUsernameException);
+    }
+
+    @Test
+    public void shouldUpdateUserWhenSaveAllListOfUsersWithSameUsernameAndID() {
+        var repository = new UserRepository();
+
+        var adminUser = createUserAdminActive();
+
+        var admin_v2 = new User(
+                adminUser.getId(),
+                "user_admin_2",
+                adminUser.getEmail(),
+                adminUser.getPasswordHash(),
+                adminUser.getStatus(),
+                adminUser.getRoles(),
+                passwordHasher
+        );
+
+        var admin_v3 = new User(
+                adminUser.getId(),
+                "user_admin_2",
+                adminUser.getEmail(),
+                adminUser.getPasswordHash(),
+                adminUser.getStatus(),
+                adminUser.getRoles(),
+                passwordHasher
+        );
+
+        repository.saveAll(List.of(admin_v2, admin_v3));
+
+        var foundUser = repository.getById(adminUser.getId());
+
+        assertNotNull(foundUser);
+        assertEquals("user_admin_2", foundUser.getUsername());
     }
 
     private User createUserAdminActive() {
