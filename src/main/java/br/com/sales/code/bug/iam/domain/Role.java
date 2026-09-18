@@ -2,6 +2,9 @@ package br.com.sales.code.bug.iam.domain;
 
 import java.util.*;
 
+/**
+ * nenhum campo de Role é opcional por design
+ */
 public class Role {
 
     public Role(String name, Set<Permission> permissions) {

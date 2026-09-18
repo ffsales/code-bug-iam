@@ -5,6 +5,9 @@ import br.com.sales.code.bug.iam.service.PasswordHasher;
 
 import java.util.*;
 
+/**
+ * nenhum campo de User é opcional por design
+ */
 public class User {
 
     //A decisão de tornar o PasswordHasher como uma interface foi para tornar a implementação tornar essa dependência menos acoplada,

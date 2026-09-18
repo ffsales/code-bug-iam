@@ -105,9 +105,21 @@ Regras de comportamento como mentor:
   (`shouldSaveListOfUsers`) que assumia ordem de iteração de `HashMap.values()` — flaky, chegou a
   falhar em uma rodada — corrigido para buscar por `username` via `filter`/`findFirst` em vez de
   indexar a lista. Enunciado completo abaixo.
-- 🔄 **Exercício 6 (Fase 2) — EM ANDAMENTO**: revisar uso idiomático de `Optional` nos métodos de
-  busca (`getById`, `getByUsername`, `tryAuthenticate`), eliminando `.get()` cru e o padrão
-  `isEmpty()` + `.get()`. Enunciado completo abaixo.
+- ✅ **Exercício 6 (Fase 2) — CONCLUÍDO**: uso idiomático de `Optional` nos métodos de busca.
+  `UserRepository.getById`/`RoleRepository.getById` passaram a reaproveitar `findById` via
+  `orElseThrow` em vez de reimplementar o acesso ao `Map`. `getByUsername` e `findByUsername`
+  passaram a encadear `Optional.ofNullable(mapUsersByName.get(username)).flatMap(this::findById)`
+  em vez de checagem manual de `null` + `.get()` cru. `AuthenticationService.tryAuthenticate`
+  virou uma cadeia única (`findByUsername(...).map(user -> {checagens de status/senha}).orElse(new
+  UserNotFound(username))`), eliminando o padrão `isEmpty()` + `.get()`; `orElse` (não `orElseGet`)
+  escolhido corretamente por `UserNotFound` ser barato de construir. `Role`/`User` ganharam Javadoc
+  documentando que nenhum campo é opcional por design (item "Optional fora de lugar" do
+  enunciado). Revisão corrigiu: uma tentativa inicial de `getByUsername` com stream
+  (`filter`/`flatMap`/`collect`) que não compilava e reimplementava por varredura o que o índice
+  `mapUsersByName` já resolvia em O(1); confirmado por grep que não sobra `Optional.get()` cru fora
+  de teste. Ponto registrado como polimento futuro, não bloqueante: `getByUsername` ainda duplica a
+  expressão de busca de `findByUsername` em vez de delegar a ele (`findByUsername(username)
+  .orElseThrow(...)`). Enunciado completo abaixo.
 
 ---
 
@@ -491,8 +503,7 @@ Pontos concretos no código atual que usam `Optional` de forma manual, não enca
 - Exercício 5: Generics — criar um `Repository<T, ID>` genérico e fazer `UserRepository` implementá-lo.
   (✅ concluído)
 - Exercício 6: `Optional` — revisar uso correto (evitar `Optional.get()` sem checagem, encadear
-  `map`/`orElseThrow`) refatorando os métodos de busca. (🔄 em andamento — enunciado detalhado
-  acima)
+  `map`/`orElseThrow`) refatorando os métodos de busca. (✅ concluído)
 - Exercício 7: I/O e NIO.2 — persistir/carregar o estado do repositório em um arquivo JSON simples
   (sem framework, usando `java.nio.file`).
 - Exercício 8: Concorrência básica — simular tentativas de login concorrentes com

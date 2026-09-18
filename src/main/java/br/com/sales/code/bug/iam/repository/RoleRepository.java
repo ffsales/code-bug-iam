@@ -27,11 +27,8 @@ public class RoleRepository implements Repository<Role, String> {
 
     @Override
     public Role getById(String roleName) {
-        var role = this.mapRolesByName.get(roleName);
-        if (Objects.isNull(role))
-            throw new RoleNotFoundException("Role %s não encontrada".formatted(roleName));
-
-        return role;
+        return this.findById(roleName)
+                .orElseThrow(() -> new RoleNotFoundException("Role %s não encontrada".formatted(roleName)));
     }
 
     @Override

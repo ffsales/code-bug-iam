@@ -32,25 +32,19 @@ public class AuthenticationService {
     }
 
     public LoginResult tryAuthenticate(String username, String password) {
-        var optUser = userRepository.findByUsername(username);
 
-        if (optUser.isEmpty())
-            return new UserNotFound(username);
-
-        var user = optUser.get();
-
-        if (UserStatus.BLOQUEADO.equals(user.getStatus()))
-            return new UserBlocked(username);
-
-        if (UserStatus.PENDENTE.equals(user.getStatus()))
-            return new UserPending(username);
-
-        var passHash = this.passwordHasher.hash(password);
-
-        if (!user.getPasswordHash().equals(passHash))
-            return new InvalidCredentials();
-
-        return new Success(user);
+        return userRepository.findByUsername(username)
+                .map(user -> {
+                    if (UserStatus.BLOQUEADO.equals(user.getStatus()))
+                        return new UserBlocked(username);
+                    if (UserStatus.PENDENTE.equals(user.getStatus()))
+                        return new UserPending(username);
+                    var passHash = this.passwordHasher.hash(password);
+                    if (!user.getPasswordHash().equals(passHash))
+                        return new InvalidCredentials();
+                    return new Success(user);
+                })
+                .orElse(new UserNotFound(username));
     }
 }
 
