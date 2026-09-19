@@ -120,6 +120,9 @@ Regras de comportamento como mentor:
   de teste. Ponto registrado como polimento futuro, não bloqueante: `getByUsername` ainda duplica a
   expressão de busca de `findByUsername` em vez de delegar a ele (`findByUsername(username)
   .orElseThrow(...)`). Enunciado completo abaixo.
+- 🔄 **Exercício 7 (Fase 2) — EM ANDAMENTO**: persistência simples do estado do repositório em
+  arquivo JSON usando `java.nio.file` (NIO.2), sem biblioteca de parsing. Enunciado completo
+  abaixo.
 
 ---
 
@@ -487,6 +490,72 @@ Pontos concretos no código atual que usam `Optional` de forma manual, não enca
 
 ---
 
+## Exercício 7 — I/O e NIO.2
+
+**Objetivo:** revisar E/S de arquivos com a API moderna (`java.nio.file`: `Path`, `Files`), incluindo
+leitura/escrita de texto, tratamento de `IOException` (checked) e serialização manual para um
+formato simples (JSON "à mão", sem biblioteca) — fixando a diferença entre a `java.io` clássica e
+o NIO.2, e revisitando a discussão checked/unchecked do Exercício 3 sob o ângulo de falhas de
+sistema de arquivos.
+
+### Contexto / ponto de partida
+- `UserRepository`/`RoleRepository` são hoje 100% em memória; todo estado se perde ao encerrar a
+  aplicação.
+- Não há dependência de parsing JSON no `pom.xml` — o exercício é deliberadamente "sem framework"
+  (nada de Jackson/Gson), pra forçar entender o que uma lib faz por baixo.
+
+### O que implementar
+1. Um método de escrita (ex: `void saveToFile(Path path)`, no próprio repositório ou numa classe
+   separada tipo `UserRepositorySerializer` — decisão sua, justifique) que serializa o estado atual
+   (`findAll()`) para um arquivo JSON simples, usando a API `Files` (`writeString` ou
+   `newBufferedWriter` — pense no trade-off entre escrever tudo de uma vez vs. streaming, para um
+   volume de dados pequeno como esse).
+2. Um método de leitura complementar (`void loadFromFile(Path path)` ou similar) que lê o JSON de
+   volta e repovoa o repositório **reaproveitando `save`/`saveAll`** (não reimplementar a
+   inserção nem bypassar a validação de `username` duplicado).
+3. Tratamento de `IOException`: ela é checked — decida se deve subir crua para o chamador, ser
+   encapsulada numa exceção de domínio unchecked (ex: `RepositoryPersistenceException`, preservando
+   a causa original via `super(msg, cause)`), ou outra estratégia. Justifique com a mesma régua
+   checked/unchecked do Exercício 3.
+4. Usar `Path`/`Files` (NIO.2) — não `java.io.File`/`FileReader`/`FileWriter`. A diferença de API é
+   o ponto do exercício.
+5. Parsing "na mão": não precisa ser um parser JSON robusto e completo, mas escrita e leitura
+   precisam ser consistentes entre si (round-trip). Documente explicitamente o que **não** é
+   tratado (ex: escaping de caracteres especiais em strings), em vez de fingir que é um parser
+   completo.
+
+### Restrições de design
+- Nada de bibliotecas de JSON externas — parsing/serialização manual, mesmo que rudimentar.
+- Não regride nas convenções anteriores (imutabilidade, `Optional` idiomático do Exercício 6,
+  hierarquia de exceções do Exercício 3, defensive copy).
+- O chamador de `saveToFile`/`loadFromFile` não deveria precisar saber que o formato interno é
+  JSON — não vaze detalhe de formato na assinatura pública além do necessário (ex: `Path` é
+  suficiente, não precisa expor `String` de JSON cru na API).
+
+### Teste de aceitação
+1. Salvar um repositório com 2-3 usuários num arquivo temporário (`Files.createTempFile`) e
+   carregar de volta num repositório novo — os usuários carregados devem ser iguais (`equals`) aos
+   originais.
+2. Salvar um repositório vazio e carregar de volta — não lança exceção, resultado é uma coleção
+   vazia.
+3. Carregar de um arquivo inexistente ou corrompido tem comportamento explícito e testado (a
+   exceção que você decidiu lançar), não uma `IOException`/`RuntimeException` genérica não tratada.
+4. (opcional, mas recomendado) round-trip de um usuário com role/permission — não só campos
+   escalares, provando que a relação aninhada (usuário → roles → permissions) sobrevive à
+   serialização.
+
+### Conexão com o domínio (CIAM)
+- Identity providers de teste/dev (um Keycloak local, um PingFederate em modo standalone)
+  costumam persistir configuração e usuários em arquivos JSON/XML no disco antes de escalar para um
+  banco real — entender o "por baixo do capô" de uma serialização manual ajuda a debugar quando
+  esse arquivo fica corrompido ou incompatível entre versões do produto.
+- `IOException` como checked exception é o exemplo clássico de "o compilador te obriga a decidir o
+  que fazer" — a mesma discussão de "fluxo de negócio esperado (arquivo pode não existir) vs. erro
+  de programação" do Exercício 3, agora aplicada a falhas de sistema de arquivos em vez de regra de
+  negócio.
+
+---
+
 ## Roteiro completo (para continuar após o Exercício 2)
 
 ### Fase 1 — Fundamentos revisitados
@@ -505,7 +574,7 @@ Pontos concretos no código atual que usam `Optional` de forma manual, não enca
 - Exercício 6: `Optional` — revisar uso correto (evitar `Optional.get()` sem checagem, encadear
   `map`/`orElseThrow`) refatorando os métodos de busca. (✅ concluído)
 - Exercício 7: I/O e NIO.2 — persistir/carregar o estado do repositório em um arquivo JSON simples
-  (sem framework, usando `java.nio.file`).
+  (sem framework, usando `java.nio.file`). (🔄 em andamento — enunciado detalhado acima)
 - Exercício 8: Concorrência básica — simular tentativas de login concorrentes com
   `ExecutorService`, garantindo que o contador de tentativas falhas (regra de bloqueio após 5
   falhas) seja thread-safe.
