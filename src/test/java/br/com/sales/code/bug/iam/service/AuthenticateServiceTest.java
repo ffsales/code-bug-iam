@@ -34,7 +34,7 @@ public class AuthenticateServiceTest {
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
-        var user = new User(id, "name", "email", "pass", UserStatus.BLOQUEADO, Set.of(role), passwordHasher);
+        var user = User.newUser(id, "name", "email", "pass", UserStatus.BLOQUEADO, Set.of(role), passwordHasher);
         userRepository.save(user);
 
         var blockedException = assertThrows(UserNotActiveException.class, () -> {
@@ -44,7 +44,7 @@ public class AuthenticateServiceTest {
         assertEquals(UserStatus.BLOQUEADO, blockedException.getStatus());
 
         var otherId = UUID.randomUUID();
-        var otherUser = new User(otherId, "otherName", "email", "pass", UserStatus.PENDENTE, Set.of(role), passwordHasher);
+        var otherUser = User.newUser(otherId, "otherName", "email", "pass", UserStatus.PENDENTE, Set.of(role), passwordHasher);
         userRepository.save(otherUser);
 
         var pendenteException = assertThrows(UserNotActiveException.class, () -> {
@@ -62,7 +62,7 @@ public class AuthenticateServiceTest {
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
-        var user = new User(id, "name", "email", "pass", UserStatus.ATIVO, Set.of(role), passwordHasher);
+        var user = User.newUser(id, "name", "email", "pass", UserStatus.ATIVO, Set.of(role), passwordHasher);
         userRepository.save(user);
 
         assertThrows(InvalidCredentialsException.class, () -> {
@@ -78,7 +78,7 @@ public class AuthenticateServiceTest {
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
-        var user = new User(id, "name", "email", "pass", UserStatus.ATIVO, Set.of(role), passwordHasher);
+        var user = User.newUser(id, "name", "email", "pass", UserStatus.ATIVO, Set.of(role), passwordHasher);
         userRepository.save(user);
 
         var userAuthenticated = authenticateService.authenticate("name", "pass");
@@ -95,7 +95,7 @@ public class AuthenticateServiceTest {
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
-        var user = new User(id, "name", "email", "pass", UserStatus.BLOQUEADO, Set.of(role), passwordHasher);
+        var user = User.newUser(id, "name", "email", "pass", UserStatus.BLOQUEADO, Set.of(role), passwordHasher);
         userRepository.save(user);
 
         var blockedException = assertThrows(UserNotActiveException.class, () -> {
@@ -123,7 +123,7 @@ public class AuthenticateServiceTest {
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
-        var user = new User(id, "name", "email", "pass", UserStatus.BLOQUEADO, Set.of(role), passwordHasher);
+        var user = User.newUser(id, "name", "email", "pass", UserStatus.BLOQUEADO, Set.of(role), passwordHasher);
         userRepository.save(user);
 
         var result = authenticateService.tryAuthenticate("name", "teste");
@@ -140,7 +140,7 @@ public class AuthenticateServiceTest {
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
-        var user = new User(id, "name", "email", "pass", UserStatus.PENDENTE, Set.of(role), passwordHasher);
+        var user = User.newUser(id, "name", "email", "pass", UserStatus.PENDENTE, Set.of(role), passwordHasher);
         userRepository.save(user);
 
         var result = authenticateService.tryAuthenticate("name", "teste");
@@ -157,7 +157,7 @@ public class AuthenticateServiceTest {
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
-        var user = new User(id, "name", "email", "pass", UserStatus.ATIVO, Set.of(role), passwordHasher);
+        var user = User.newUser(id, "name", "email", "pass", UserStatus.ATIVO, Set.of(role), passwordHasher);
         userRepository.save(user);
 
         var result = authenticateService.tryAuthenticate("name", "error");

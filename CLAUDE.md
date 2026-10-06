@@ -120,9 +120,37 @@ Regras de comportamento como mentor:
   de teste. Ponto registrado como polimento futuro, não bloqueante: `getByUsername` ainda duplica a
   expressão de busca de `findByUsername` em vez de delegar a ele (`findByUsername(username)
   .orElseThrow(...)`). Enunciado completo abaixo.
-- 🔄 **Exercício 7 (Fase 2) — EM ANDAMENTO**: persistência simples do estado do repositório em
-  arquivo JSON usando `java.nio.file` (NIO.2), sem biblioteca de parsing. Enunciado completo
-  abaixo.
+- ✅ **Exercício 7 (Fase 2) — CONCLUÍDO**: persistência do estado do repositório em arquivo JSON via
+  `java.nio.file` (NIO.2), com parsing manual (sem biblioteca). `UserRepository.saveToFile`/
+  `loadFromFile` reaproveitam `findAll`/`saveAll` (não bypassam a validação de `username` duplicado).
+  Serialização isolada em `UserSerializer` (monta/lê o JSON campo a campo via um `ObjectSerializer`/
+  `JsonSerializer` injetado) e `RepositoryPersistenceException` encapsulando falhas de I/O e de
+  parsing, preservando a causa original (`super(msg, cause)`). Passou por várias rodadas de revisão
+  corrigindo dois bugs reais e um problema estrutural nos testes:
+  - **Double-hash de senha no round-trip**: `UserSerializer` gravava `user.getPasswordHash()` (já
+    hasheado) e `deserializeUser` reconstruía o `User` pelo construtor que hasheia de novo — depois
+    de salvar e carregar, a senha original deixava de autenticar. Resolvido separando duas formas de
+    criar um `User`: `User.newUser(...)` (dado novo, em texto plano, hasheia) e
+    `User.reconstructUser(...)` (dado já persistido, atribui o hash direto) — os dois construtores
+    ficaram `private`, só acessíveis pelas factories, pra não dar pra confundir qual aceita o quê.
+  - **Repositório vazio quebrava ao carregar** (`StringIndexOutOfBoundsException` numa linha vazia
+    gerada pelo próprio serializer) — corrigido tratando linha vazia/em branco no parsing.
+  - **Testes não provavam o round-trip**: as primeiras versões salvavam e "carregavam" na mesma
+    instância de `UserRepository`, então um `deserializeUser` quebrado (ex: devolvendo 0 usuários)
+    passaria do mesmo jeito, porque os usuários originais nunca saíam da memória. Corrigido usando
+    duas instâncias (uma escreve, outra lê) e comparando campo a campo (incluindo `getPasswordHash`,
+    que `User.equals` — por `id` — não cobre). Testes de arquivo também migraram de paths fixos em
+    `resources/` (que geravam dependência de ordem entre métodos de teste — mesma causa-raiz do bug
+    de `HashMap.values()` do Exercício 5) para `@TempDir` do JUnit 5.
+  - **Validação de campo malformado na desserialização**: capturar `NullPointerException` genérica
+    pra sinalizar "arquivo corrompido" não cobria todos os casos (`UUID.fromString`/`UserStatus.valueOf`
+    lançam `IllegalArgumentException` pra valor presente mas malformado, não capturada). Resolvido
+    com `reconstructUser` validando formato explicitamente (UUID, enum) antes de construir, lançando
+    `UserFieldInvalidException` (nova, extends `DomainException`) com mensagem por campo;
+    `deserializeUser` encapsula qualquer `DomainException` em `RepositoryPersistenceException`
+    preservando a causa. `RepositoryPersistenceException` ficou fora da hierarquia de `DomainException`
+    por decisão documentada (falha de I/O/parsing não é violação de regra de negócio, é infraestrutura).
+  Enunciado completo abaixo.
 
 ---
 
@@ -574,10 +602,10 @@ sistema de arquivos.
 - Exercício 6: `Optional` — revisar uso correto (evitar `Optional.get()` sem checagem, encadear
   `map`/`orElseThrow`) refatorando os métodos de busca. (✅ concluído)
 - Exercício 7: I/O e NIO.2 — persistir/carregar o estado do repositório em um arquivo JSON simples
-  (sem framework, usando `java.nio.file`). (🔄 em andamento — enunciado detalhado acima)
+  (sem framework, usando `java.nio.file`). (✅ concluído)
 - Exercício 8: Concorrência básica — simular tentativas de login concorrentes com
   `ExecutorService`, garantindo que o contador de tentativas falhas (regra de bloqueio após 5
-  falhas) seja thread-safe.
+  falhas) seja thread-safe. (🔄 próximo)
 - Exercício 9: Testes com JUnit 5 — parametrização (`@ParameterizedTest`), `@Nested`, mocks simples
   (sem Mockito ainda, só para fixar a API do JUnit).
 

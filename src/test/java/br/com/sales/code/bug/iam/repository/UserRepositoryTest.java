@@ -5,11 +5,18 @@ import br.com.sales.code.bug.iam.domain.Role;
 import br.com.sales.code.bug.iam.domain.User;
 import br.com.sales.code.bug.iam.domain.UserStatus;
 import br.com.sales.code.bug.iam.domain.exception.DuplicateUsernameException;
+import br.com.sales.code.bug.iam.domain.exception.RepositoryPersistenceException;
+import br.com.sales.code.bug.iam.domain.exception.UserFieldInvalidException;
 import br.com.sales.code.bug.iam.domain.exception.UserNotFoundException;
 import br.com.sales.code.bug.iam.service.PasswordHasher;
 import br.com.sales.code.bug.iam.service.PasswordHasherDigest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -29,6 +36,15 @@ public class UserRepositoryTest {
     private static final String MOCKED_ADMIN_PERMISSION_USER_WRITE = "user:write";
     private static final String MOCKED_ADMIN_PERMISSION_USER_READ = "user:read";
 
+    private static final String MOCKED_USER_WITH_INVALID_FIELD = """
+            [
+                { "id": "1231", "username": "user_commom_3", "email":"user.commom_3@teste.com", "password":"7c66e67db2f8df7a6804255e937015649cb7e9659af0b55567773feaee9c99d4", "roles":[ { "name":"COMMOM_READ", "permissions":[ { "value":"user:read" }] } ] }
+            ]
+            """;
+
+    @TempDir
+    private Path tempDir;
+
     @Test
     public void shouldSaveUsersInRepository() {
         var repository = new UserRepository();
@@ -46,7 +62,7 @@ public class UserRepositoryTest {
 
         assertEquals(3, repository.findAll().size());
 
-        var newCommomUser = new User(
+        var newCommomUser = User.newUser(
                 commomUser.getId(),
                 "NOVO_COMMOM",
                 commomUser.getEmail(),
@@ -57,7 +73,7 @@ public class UserRepositoryTest {
         repository.save(newCommomUser);
         assertEquals(3, repository.findAll().size());
 
-        repository.save(new User(
+        repository.save(User.newUser(
                 UUID.randomUUID(),
                 commomUser.getUsername(),
                 commomUser.getEmail(),
@@ -78,7 +94,7 @@ public class UserRepositoryTest {
         repository.save(adminUser);
         repository.save(commomUser);
 
-        var newUser = new User(
+        var newUser = User.newUser(
                 UUID.randomUUID(),
                 commomUser.getUsername(),
                 "newEmail",
@@ -177,7 +193,7 @@ public class UserRepositoryTest {
         assertTrue(foundUser.isPresent());
         assertEquals(commomUser.getId(), foundUser.get().getId());
 
-        var newCommomUser = new User(
+        var newCommomUser = User.newUser(
                 commomUser.getId(),
                 "NOVO USER",
                 "NOVO EMAIL",
@@ -299,7 +315,7 @@ public class UserRepositoryTest {
 
         var adminUser = createUserAdminActive();
 
-        var admin_v2 = new User(
+        var admin_v2 = User.newUser(
                 adminUser.getId(),
                 "user_admin_2",
                 adminUser.getEmail(),
@@ -309,7 +325,7 @@ public class UserRepositoryTest {
                 passwordHasher
                 );
 
-        var admin_v3 = new User(
+        var admin_v3 = User.newUser(
                 UUID.randomUUID(),
                 "user_admin_2",
                 adminUser.getEmail(),
@@ -332,7 +348,7 @@ public class UserRepositoryTest {
 
         var adminUser = createUserAdminActive();
 
-        var admin_v2 = new User(
+        var admin_v2 = User.newUser(
                 adminUser.getId(),
                 "user_admin_2",
                 adminUser.getEmail(),
@@ -342,7 +358,7 @@ public class UserRepositoryTest {
                 passwordHasher
         );
 
-        var admin_v3 = new User(
+        var admin_v3 = User.newUser(
                 adminUser.getId(),
                 "user_admin_2",
                 adminUser.getEmail(),
@@ -358,6 +374,112 @@ public class UserRepositoryTest {
 
         assertNotNull(foundUser);
         assertEquals("user_admin_2", foundUser.getUsername());
+    }
+
+    @Test
+    public void shouldSerializeUsers() {
+        var repository = new UserRepository();
+        var userAdmin = createUserAdminActive();
+        var userCommom = createOtherUserCommomBlocked();
+
+        repository.saveAll(List.of(userAdmin, userCommom));
+
+        var path = tempDir.resolve("users-serialize-test.json");
+        repository.saveToFile(path);
+
+        var fileRepository = new UserRepository();
+        fileRepository.loadFromFile(path);
+
+        var userListFromFile = fileRepository.findAll();
+        var userList = repository.findAll();
+
+        assertEquals(userList.size(), userListFromFile.size());
+
+        var userAdminFromFile = fileRepository.getById(userAdmin.getId());
+        var userCommomFromFile = fileRepository.getById(userCommom.getId());
+
+        assertEquals(userAdmin, userAdminFromFile);
+        assertEquals(userAdmin.getUsername(), userAdminFromFile.getUsername());
+        assertEquals(userAdmin.getStatus(), userAdminFromFile.getStatus());
+        assertEquals(userAdmin.getEmail(), userAdminFromFile.getEmail());
+        assertEquals(userAdmin.getPasswordHash(), userAdminFromFile.getPasswordHash());
+
+        assertEquals(userCommom, userCommomFromFile);
+        assertEquals(userCommom.getUsername(), userCommomFromFile.getUsername());
+        assertEquals(userCommom.getStatus(), userCommomFromFile.getStatus());
+        assertEquals(userCommom.getEmail(), userCommomFromFile.getEmail());
+        assertEquals(userCommom.getPasswordHash(), userCommomFromFile.getPasswordHash());
+    }
+
+    @Test
+    public void shouldDeserializerUsers() throws IOException {
+        var repository = new UserRepository();
+        var userAdmin = createUserAdminActive();
+        var userCommom = createOtherUserCommomBlocked();
+
+        repository.saveAll(List.of(userAdmin, userCommom));
+        var path = tempDir.resolve("users-deserialize-test.json");
+        repository.saveToFile(path);
+
+        var fileRepository = new UserRepository();
+
+        assertDoesNotThrow(() -> fileRepository.loadFromFile(path));
+        var listUsers = fileRepository.findAll();
+        assertEquals(2, listUsers.size());
+    }
+
+    @Test
+    public void shouldSerializeEmptyUsers() {
+        var repository = new UserRepository();
+        var path = tempDir.resolve("empty-users-serialize-test.json");
+        repository.saveToFile(path);
+
+        var fileRepository = new UserRepository();
+        fileRepository.loadFromFile(path);
+
+        var emptyListUsers = fileRepository.findAll();
+        assertEquals(0, emptyListUsers.size());
+    }
+
+    @Test
+    public void shouldDeserializeEmptyUsers() {
+        var repository = new UserRepository();
+        var path = tempDir.resolve("empty-users-deserialize-test.json");
+        repository.saveToFile(path);
+
+        var fileRepository = new UserRepository();
+
+        assertDoesNotThrow(() -> fileRepository.loadFromFile(path));
+        var emptyListUsers = fileRepository.findAll();
+        assertEquals(0, emptyListUsers.size());
+    }
+
+    @Test
+    public void shouldThrowRepositoryPersistenceExceptionOnLoadFromUnexistFile() {
+        var repository = new UserRepository();
+        var path = tempDir.resolve("arquivo.json");
+        assertThrows(RepositoryPersistenceException.class, () ->repository.loadFromFile(path));
+    }
+
+    @Test
+    public void shouldThrowRepositoryPersistenceExceptionOnLoadFromInvalidFile() throws IOException {
+        var repository = new UserRepository();
+        var newPath = tempDir.resolve("arquivo.json");
+        Files.writeString(newPath, "1234654987987979846123", StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING);
+        assertThrows(RepositoryPersistenceException.class, () ->repository.loadFromFile(newPath));
+
+    }
+
+    @Test
+    public void shouldThrowRepositoryPersistenceExceptionWithFieldsInvalidFromFile() throws IOException {
+        var repository = new UserRepository();
+        var path = tempDir.resolve("file.json");
+        Files.writeString(path, MOCKED_USER_WITH_INVALID_FIELD, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        var idException = assertThrows(RepositoryPersistenceException.class, () ->
+                repository.loadFromFile(path));
+        assertEquals("O arquivo contém campos inválidos.", idException.getMessage());
+        assertEquals(UserFieldInvalidException.class, idException.getCause().getClass());
     }
 
     private User createUserAdminActive() {
@@ -433,6 +555,6 @@ public class UserRepositoryTest {
 
     private User createMockedUser(String username, String email, String pass, UserStatus status, Set<Role> roles) {
         var id = UUID.randomUUID();
-        return new User(id, username, email, pass, status, roles, passwordHasher);
+        return User.newUser(id, username, email, pass, status, roles, passwordHasher);
     }
 }

@@ -4,8 +4,15 @@ import br.com.sales.code.bug.iam.domain.Role;
 import br.com.sales.code.bug.iam.domain.User;
 import br.com.sales.code.bug.iam.domain.UserStatus;
 import br.com.sales.code.bug.iam.domain.exception.DuplicateUsernameException;
+import br.com.sales.code.bug.iam.domain.exception.RepositoryPersistenceException;
 import br.com.sales.code.bug.iam.domain.exception.UserNotFoundException;
+import br.com.sales.code.bug.iam.service.JsonSerializer;
+import br.com.sales.code.bug.iam.service.UserSerializer;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -21,9 +28,12 @@ public class UserRepository implements Repository<User, UUID> {
     //Porém, com o uso de um banco de dados real, podemos criar mais de um índice dentro da mesma estrutura.
     private final Map<String, UUID> mapUsersByName;
 
+    private final UserSerializer userSerializer;
+
     public UserRepository() {
         this.mapUsersById = new HashMap<>();
         this.mapUsersByName = new HashMap<>();
+        this.userSerializer = new UserSerializer(new JsonSerializer());
     }
 
     @Override
@@ -145,5 +155,53 @@ public class UserRepository implements Repository<User, UUID> {
                         }
                 ));
         entities.forEach(this::save);
+    }
+
+    /**
+     * O método foi implementado dentro de UserRepository porque recupera dados do método findAll e não se faz
+     * necessário ter outro repository para a mesma entidade
+     */
+    public void saveToFile(Path path) {
+
+        var users = this.findAll();
+
+        var list = this.userSerializer.serializeUsers(users);
+
+        try {
+            // Usei a opção StandardOpenOption.TRUNCATE_EXISTING para que salve apenas o que há no Map, para que não tenha
+            // problemas e não quebre o contrato do json quando executar o método mais de uma vez
+            Files.writeString(
+                    path,
+                    list,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (IOException exc) {
+            throw new RepositoryPersistenceException("Problemas ao gerar o arquivo de persistência.", exc);
+        }
+    }
+
+    public void loadFromFile(Path path) {
+        if (!Files.isRegularFile(path))
+            throw new RepositoryPersistenceException("Não é um arquivo válido");
+
+        List<String> lines;
+        try {
+            lines = Files.readAllLines(path);
+        } catch(IOException exc) {
+            throw new RepositoryPersistenceException("Não é um arquivo válido", exc);
+        }
+
+        var setUsers = new HashSet<User>();
+
+        for (String line : lines) {
+
+            if (line.trim().isEmpty() || line.trim().charAt(0) == '[' || line.trim().charAt(0) == ']')
+                continue;
+
+            setUsers.add(this.userSerializer.deserializeUser(line.trim()));
+        }
+
+        this.saveAll(setUsers);
+
     }
 }
