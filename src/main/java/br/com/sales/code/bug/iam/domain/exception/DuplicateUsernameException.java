@@ -6,10 +6,6 @@ package br.com.sales.code.bug.iam.domain.exception;
  */
 public class DuplicateUsernameException extends DomainException{
 
-//    public DuplicateUsernameException(String message, Throwable cause) {
-//        super(message, cause);
-//    }
-
     public DuplicateUsernameException(String message) {
         super(message);
     }

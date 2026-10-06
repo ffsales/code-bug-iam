@@ -20,7 +20,7 @@ public class ConsumerLoginTest {
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
-        var user = new User(id, "name", "email", "pass", UserStatus.ATIVO, Set.of(role), passwordHasher);
+        var user = User.newUser(id, "name", "email", "pass", UserStatus.ATIVO, Set.of(role), passwordHasher);
         userRepository.save(user);
 
         var result = authenticateService.tryAuthenticate("name", "pass");
@@ -40,7 +40,7 @@ public class ConsumerLoginTest {
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
-        var user = new User(id, "name", "email", "pass", UserStatus.BLOQUEADO, Set.of(role), passwordHasher);
+        var user = User.newUser(id, "name", "email", "pass", UserStatus.BLOQUEADO, Set.of(role), passwordHasher);
         userRepository.save(user);
 
         var result = authenticateService.tryAuthenticate("name", "wrong");

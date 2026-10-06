@@ -1,5 +1,6 @@
 package br.com.sales.code.bug.iam.domain;
 
+import br.com.sales.code.bug.iam.domain.exception.UserFieldInvalidException;
 import br.com.sales.code.bug.iam.domain.exception.UserWithoutRoleException;
 import br.com.sales.code.bug.iam.service.PasswordHasher;
 import br.com.sales.code.bug.iam.service.PasswordHasherDigest;
@@ -92,51 +93,88 @@ public class DomainTest {
         roles.add(role1);
         roles.add(role2);
 
-//        Assertions.assertEquals(2, roles.size());
         assertEquals(1, roles.size());
     }
 
     @Test
     public void shouldThrowNullPointerExceptionWhenGiveInvalidData() {
-        var idNullException = assertThrows(NullPointerException.class, () -> {
-            new User(null, "Name", "Email", "Pass", UserStatus.ATIVO, Set.of(), passwordHasher);
+        var idUserNullPointerException = assertThrows(NullPointerException.class, () -> {
+            User.newUser(null, "Name", "Email", "Pass", UserStatus.ATIVO, Set.of(), passwordHasher);
         });
-        assertEquals("Id é obrigatório.", idNullException.getMessage());
+        assertEquals("Id é obrigatório.", idUserNullPointerException.getMessage());
 
-        var usernameNullException = assertThrows(NullPointerException.class, () -> {
-           new User(UUID.randomUUID(), null, "Email", "Pass", UserStatus.ATIVO, Set.of(), passwordHasher);
+        var usernameNullPointerException = assertThrows(NullPointerException.class, () -> {
+           User.newUser(UUID.randomUUID(), null, "Email", "Pass", UserStatus.ATIVO, Set.of(), passwordHasher);
         });
-        assertEquals("Username é obrigatório.", usernameNullException.getMessage());
+        assertEquals("Username é obrigatório.", usernameNullPointerException.getMessage());
 
-        var emailNullException = assertThrows(NullPointerException.class, () -> {
-            new User(UUID.randomUUID(), "Name", null, "Pass", UserStatus.ATIVO, Set.of(), passwordHasher);
+        var emailNullPointerException = assertThrows(NullPointerException.class, () -> {
+            User.newUser(UUID.randomUUID(), "Name", null, "Pass", UserStatus.ATIVO, Set.of(), passwordHasher);
         });
-        assertEquals("Email é obrigatório.", emailNullException.getMessage());
+        assertEquals("Email é obrigatório.", emailNullPointerException.getMessage());
 
-        var passNullException = assertThrows(NullPointerException.class, () -> {
-            new User(UUID.randomUUID(), "Name", "Email", null, UserStatus.ATIVO, Set.of(), passwordHasher);
+        var passNullPointerException = assertThrows(NullPointerException.class, () -> {
+            User.newUser(UUID.randomUUID(), "Name", "Email", null, UserStatus.ATIVO, Set.of(), passwordHasher);
         });
-        assertEquals("Password é obrigatório.", passNullException.getMessage());
+        assertEquals("Password é obrigatório.", passNullPointerException.getMessage());
 
-        var statusNullException = assertThrows(NullPointerException.class, () -> {
-            new User(UUID.randomUUID(), "Name", "Email", "Pass", null, Set.of(), passwordHasher);
+        var statusNullPointerException = assertThrows(NullPointerException.class, () -> {
+            User.newUser(UUID.randomUUID(), "Name", "Email", "Pass", null, Set.of(), passwordHasher);
         });
-        assertEquals("Status é obrigatório.", statusNullException.getMessage());
+        assertEquals("Status é obrigatório.", statusNullPointerException.getMessage());
 
-        var rolesNullException = assertThrows(NullPointerException.class, () -> {
-            new User(UUID.randomUUID(), "Name", "Email", "Pass", UserStatus.ATIVO, null, passwordHasher);
+        var rolesNullPointerException = assertThrows(NullPointerException.class, () -> {
+            User.newUser(UUID.randomUUID(), "Name", "Email", "Pass", UserStatus.ATIVO, null, passwordHasher);
         });
-        assertEquals("Roles é obrigatório.", rolesNullException.getMessage());
+        assertEquals("Role é obrigatório.", rolesNullPointerException.getMessage());
 
-        var hasherNullException = assertThrows(NullPointerException.class, () -> {
-            new User(UUID.randomUUID(), "NAME", "EMAIL", "PASS", UserStatus.ATIVO, Set.of(new Role("name", Set.of())), null);
+        var hasherNullPointerException = assertThrows(NullPointerException.class, () -> {
+            User.newUser(UUID.randomUUID(), "NAME", "EMAIL", "PASS", UserStatus.ATIVO, Set.of(new Role("name", Set.of())), null);
         });
-        assertEquals("Hasher é obrigatório.", hasherNullException.getMessage());
+        assertEquals("PasswordHasher é obrigatório.", hasherNullPointerException.getMessage());
 
         var withoutRoleException = assertThrows(UserWithoutRoleException.class, () -> {
-            new User(UUID.randomUUID(), "NAME", "EMAIL", "PASS", UserStatus.ATIVO, Set.of(), passwordHasher);
+            User.newUser(UUID.randomUUID(), "NAME", "EMAIL", "PASS", UserStatus.ATIVO, Set.of(), passwordHasher);
         });
         assertEquals("É obrigatório ao menos uma Role.", withoutRoleException.getMessage());
+    }
+
+
+
+    @Test
+    public void shouldThrowUserFieldInvalidExceptionWithInvalidUUIDOnReconstructUser() {
+        var idNullUserFieldInvalidException = assertThrows(UserFieldInvalidException.class, () ->
+                User.reconstructUser(null, "123", "teste@teste.com", "123", "ATIVO", Set.of()));
+        assertEquals("Id é obrigatório.", idNullUserFieldInvalidException.getMessage());
+
+        var idUserFieldInvalidException = assertThrows(UserFieldInvalidException.class, () ->
+                User.reconstructUser("123", "123", "teste@teste.com", "123", "ATIVO", Set.of()));
+        assertEquals("Id é inválido.", idUserFieldInvalidException.getMessage());
+
+        var usernameUserFieldInvalidException = assertThrows(UserFieldInvalidException.class, () ->
+                User.reconstructUser(UUID.randomUUID().toString(), null, "teste@teste.com", "123", "ATIVO", Set.of()));
+        assertEquals("Username é obrigatório.", usernameUserFieldInvalidException.getMessage());
+
+        var emailUserFieldInvalidException = assertThrows(UserFieldInvalidException.class, () ->
+                User.reconstructUser(UUID.randomUUID().toString(), "user", null, "123", "ATIVO", Set.of()));
+        assertEquals("Email é obrigatório.", emailUserFieldInvalidException.getMessage());
+
+        var passUserFieldInvalidException = assertThrows(UserFieldInvalidException.class, () ->
+                User.reconstructUser(UUID.randomUUID().toString(), "user", "teste@teste.com", null, "ATIVO", Set.of()));
+        assertEquals("Password é obrigatório.", passUserFieldInvalidException.getMessage());
+
+        var statusNullUserFieldInvalidException = assertThrows(UserFieldInvalidException.class, () ->
+                User.reconstructUser(UUID.randomUUID().toString(), "user", "teste@teste.com", "123", null, Set.of()));
+        assertEquals("Status é obrigatório.", statusNullUserFieldInvalidException.getMessage());
+
+        var statusUserFieldInvalidException = assertThrows(UserFieldInvalidException.class, () ->
+                User.reconstructUser(UUID.randomUUID().toString(), "user", "teste@teste.com", "123", "TESTE", Set.of()));
+        assertEquals("Status é inválido.", statusUserFieldInvalidException.getMessage());
+
+        var rolesUserWithoutRoleException = assertThrows(UserWithoutRoleException.class, () ->
+                User.reconstructUser(UUID.randomUUID().toString(), "user", "teste@teste.com", "123", "ATIVO", Set.of()));
+        assertEquals("É obrigatório ao menos uma Role.", rolesUserWithoutRoleException.getMessage());
+
     }
 
     private User createMockedUser(Set<Role> setRoles) {
@@ -148,7 +186,7 @@ public class DomainTest {
         var status = UserStatus.ATIVO;
         var roles = setRoles;
 
-        return new User(id, username, email, pass, status, roles, passwordHasher);
+        return User.newUser(id, username, email, pass, status, roles, passwordHasher);
     }
 
     private Set<Role> createMockedSetRoles() {

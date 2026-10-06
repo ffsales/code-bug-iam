@@ -105,9 +105,52 @@ Regras de comportamento como mentor:
   (`shouldSaveListOfUsers`) que assumia ordem de iteração de `HashMap.values()` — flaky, chegou a
   falhar em uma rodada — corrigido para buscar por `username` via `filter`/`findFirst` em vez de
   indexar a lista. Enunciado completo abaixo.
-- 🔄 **Exercício 6 (Fase 2) — EM ANDAMENTO**: revisar uso idiomático de `Optional` nos métodos de
-  busca (`getById`, `getByUsername`, `tryAuthenticate`), eliminando `.get()` cru e o padrão
-  `isEmpty()` + `.get()`. Enunciado completo abaixo.
+- ✅ **Exercício 6 (Fase 2) — CONCLUÍDO**: uso idiomático de `Optional` nos métodos de busca.
+  `UserRepository.getById`/`RoleRepository.getById` passaram a reaproveitar `findById` via
+  `orElseThrow` em vez de reimplementar o acesso ao `Map`. `getByUsername` e `findByUsername`
+  passaram a encadear `Optional.ofNullable(mapUsersByName.get(username)).flatMap(this::findById)`
+  em vez de checagem manual de `null` + `.get()` cru. `AuthenticationService.tryAuthenticate`
+  virou uma cadeia única (`findByUsername(...).map(user -> {checagens de status/senha}).orElse(new
+  UserNotFound(username))`), eliminando o padrão `isEmpty()` + `.get()`; `orElse` (não `orElseGet`)
+  escolhido corretamente por `UserNotFound` ser barato de construir. `Role`/`User` ganharam Javadoc
+  documentando que nenhum campo é opcional por design (item "Optional fora de lugar" do
+  enunciado). Revisão corrigiu: uma tentativa inicial de `getByUsername` com stream
+  (`filter`/`flatMap`/`collect`) que não compilava e reimplementava por varredura o que o índice
+  `mapUsersByName` já resolvia em O(1); confirmado por grep que não sobra `Optional.get()` cru fora
+  de teste. Ponto registrado como polimento futuro, não bloqueante: `getByUsername` ainda duplica a
+  expressão de busca de `findByUsername` em vez de delegar a ele (`findByUsername(username)
+  .orElseThrow(...)`). Enunciado completo abaixo.
+- ✅ **Exercício 7 (Fase 2) — CONCLUÍDO**: persistência do estado do repositório em arquivo JSON via
+  `java.nio.file` (NIO.2), com parsing manual (sem biblioteca). `UserRepository.saveToFile`/
+  `loadFromFile` reaproveitam `findAll`/`saveAll` (não bypassam a validação de `username` duplicado).
+  Serialização isolada em `UserSerializer` (monta/lê o JSON campo a campo via um `ObjectSerializer`/
+  `JsonSerializer` injetado) e `RepositoryPersistenceException` encapsulando falhas de I/O e de
+  parsing, preservando a causa original (`super(msg, cause)`). Passou por várias rodadas de revisão
+  corrigindo dois bugs reais e um problema estrutural nos testes:
+  - **Double-hash de senha no round-trip**: `UserSerializer` gravava `user.getPasswordHash()` (já
+    hasheado) e `deserializeUser` reconstruía o `User` pelo construtor que hasheia de novo — depois
+    de salvar e carregar, a senha original deixava de autenticar. Resolvido separando duas formas de
+    criar um `User`: `User.newUser(...)` (dado novo, em texto plano, hasheia) e
+    `User.reconstructUser(...)` (dado já persistido, atribui o hash direto) — os dois construtores
+    ficaram `private`, só acessíveis pelas factories, pra não dar pra confundir qual aceita o quê.
+  - **Repositório vazio quebrava ao carregar** (`StringIndexOutOfBoundsException` numa linha vazia
+    gerada pelo próprio serializer) — corrigido tratando linha vazia/em branco no parsing.
+  - **Testes não provavam o round-trip**: as primeiras versões salvavam e "carregavam" na mesma
+    instância de `UserRepository`, então um `deserializeUser` quebrado (ex: devolvendo 0 usuários)
+    passaria do mesmo jeito, porque os usuários originais nunca saíam da memória. Corrigido usando
+    duas instâncias (uma escreve, outra lê) e comparando campo a campo (incluindo `getPasswordHash`,
+    que `User.equals` — por `id` — não cobre). Testes de arquivo também migraram de paths fixos em
+    `resources/` (que geravam dependência de ordem entre métodos de teste — mesma causa-raiz do bug
+    de `HashMap.values()` do Exercício 5) para `@TempDir` do JUnit 5.
+  - **Validação de campo malformado na desserialização**: capturar `NullPointerException` genérica
+    pra sinalizar "arquivo corrompido" não cobria todos os casos (`UUID.fromString`/`UserStatus.valueOf`
+    lançam `IllegalArgumentException` pra valor presente mas malformado, não capturada). Resolvido
+    com `reconstructUser` validando formato explicitamente (UUID, enum) antes de construir, lançando
+    `UserFieldInvalidException` (nova, extends `DomainException`) com mensagem por campo;
+    `deserializeUser` encapsula qualquer `DomainException` em `RepositoryPersistenceException`
+    preservando a causa. `RepositoryPersistenceException` ficou fora da hierarquia de `DomainException`
+    por decisão documentada (falha de I/O/parsing não é violação de regra de negócio, é infraestrutura).
+  Enunciado completo abaixo.
 
 ---
 
@@ -475,6 +518,72 @@ Pontos concretos no código atual que usam `Optional` de forma manual, não enca
 
 ---
 
+## Exercício 7 — I/O e NIO.2
+
+**Objetivo:** revisar E/S de arquivos com a API moderna (`java.nio.file`: `Path`, `Files`), incluindo
+leitura/escrita de texto, tratamento de `IOException` (checked) e serialização manual para um
+formato simples (JSON "à mão", sem biblioteca) — fixando a diferença entre a `java.io` clássica e
+o NIO.2, e revisitando a discussão checked/unchecked do Exercício 3 sob o ângulo de falhas de
+sistema de arquivos.
+
+### Contexto / ponto de partida
+- `UserRepository`/`RoleRepository` são hoje 100% em memória; todo estado se perde ao encerrar a
+  aplicação.
+- Não há dependência de parsing JSON no `pom.xml` — o exercício é deliberadamente "sem framework"
+  (nada de Jackson/Gson), pra forçar entender o que uma lib faz por baixo.
+
+### O que implementar
+1. Um método de escrita (ex: `void saveToFile(Path path)`, no próprio repositório ou numa classe
+   separada tipo `UserRepositorySerializer` — decisão sua, justifique) que serializa o estado atual
+   (`findAll()`) para um arquivo JSON simples, usando a API `Files` (`writeString` ou
+   `newBufferedWriter` — pense no trade-off entre escrever tudo de uma vez vs. streaming, para um
+   volume de dados pequeno como esse).
+2. Um método de leitura complementar (`void loadFromFile(Path path)` ou similar) que lê o JSON de
+   volta e repovoa o repositório **reaproveitando `save`/`saveAll`** (não reimplementar a
+   inserção nem bypassar a validação de `username` duplicado).
+3. Tratamento de `IOException`: ela é checked — decida se deve subir crua para o chamador, ser
+   encapsulada numa exceção de domínio unchecked (ex: `RepositoryPersistenceException`, preservando
+   a causa original via `super(msg, cause)`), ou outra estratégia. Justifique com a mesma régua
+   checked/unchecked do Exercício 3.
+4. Usar `Path`/`Files` (NIO.2) — não `java.io.File`/`FileReader`/`FileWriter`. A diferença de API é
+   o ponto do exercício.
+5. Parsing "na mão": não precisa ser um parser JSON robusto e completo, mas escrita e leitura
+   precisam ser consistentes entre si (round-trip). Documente explicitamente o que **não** é
+   tratado (ex: escaping de caracteres especiais em strings), em vez de fingir que é um parser
+   completo.
+
+### Restrições de design
+- Nada de bibliotecas de JSON externas — parsing/serialização manual, mesmo que rudimentar.
+- Não regride nas convenções anteriores (imutabilidade, `Optional` idiomático do Exercício 6,
+  hierarquia de exceções do Exercício 3, defensive copy).
+- O chamador de `saveToFile`/`loadFromFile` não deveria precisar saber que o formato interno é
+  JSON — não vaze detalhe de formato na assinatura pública além do necessário (ex: `Path` é
+  suficiente, não precisa expor `String` de JSON cru na API).
+
+### Teste de aceitação
+1. Salvar um repositório com 2-3 usuários num arquivo temporário (`Files.createTempFile`) e
+   carregar de volta num repositório novo — os usuários carregados devem ser iguais (`equals`) aos
+   originais.
+2. Salvar um repositório vazio e carregar de volta — não lança exceção, resultado é uma coleção
+   vazia.
+3. Carregar de um arquivo inexistente ou corrompido tem comportamento explícito e testado (a
+   exceção que você decidiu lançar), não uma `IOException`/`RuntimeException` genérica não tratada.
+4. (opcional, mas recomendado) round-trip de um usuário com role/permission — não só campos
+   escalares, provando que a relação aninhada (usuário → roles → permissions) sobrevive à
+   serialização.
+
+### Conexão com o domínio (CIAM)
+- Identity providers de teste/dev (um Keycloak local, um PingFederate em modo standalone)
+  costumam persistir configuração e usuários em arquivos JSON/XML no disco antes de escalar para um
+  banco real — entender o "por baixo do capô" de uma serialização manual ajuda a debugar quando
+  esse arquivo fica corrompido ou incompatível entre versões do produto.
+- `IOException` como checked exception é o exemplo clássico de "o compilador te obriga a decidir o
+  que fazer" — a mesma discussão de "fluxo de negócio esperado (arquivo pode não existir) vs. erro
+  de programação" do Exercício 3, agora aplicada a falhas de sistema de arquivos em vez de regra de
+  negócio.
+
+---
+
 ## Roteiro completo (para continuar após o Exercício 2)
 
 ### Fase 1 — Fundamentos revisitados
@@ -491,13 +600,12 @@ Pontos concretos no código atual que usam `Optional` de forma manual, não enca
 - Exercício 5: Generics — criar um `Repository<T, ID>` genérico e fazer `UserRepository` implementá-lo.
   (✅ concluído)
 - Exercício 6: `Optional` — revisar uso correto (evitar `Optional.get()` sem checagem, encadear
-  `map`/`orElseThrow`) refatorando os métodos de busca. (🔄 em andamento — enunciado detalhado
-  acima)
+  `map`/`orElseThrow`) refatorando os métodos de busca. (✅ concluído)
 - Exercício 7: I/O e NIO.2 — persistir/carregar o estado do repositório em um arquivo JSON simples
-  (sem framework, usando `java.nio.file`).
+  (sem framework, usando `java.nio.file`). (✅ concluído)
 - Exercício 8: Concorrência básica — simular tentativas de login concorrentes com
   `ExecutorService`, garantindo que o contador de tentativas falhas (regra de bloqueio após 5
-  falhas) seja thread-safe.
+  falhas) seja thread-safe. (🔄 próximo)
 - Exercício 9: Testes com JUnit 5 — parametrização (`@ParameterizedTest`), `@Nested`, mocks simples
   (sem Mockito ainda, só para fixar a API do JUnit).
 

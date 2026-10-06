@@ -13,6 +13,8 @@ public interface Repository<T, ID> {
 
     Optional<T> findById(ID id);
 
+    // getById foi mantido como método comum de interface para que a cada método implemente a sua lógica
+    // e continue enviando a sua própria exception, para comunicar melhor a exceção em caso de ausência
     T getById(ID id);
 
     List<T> findAll();
