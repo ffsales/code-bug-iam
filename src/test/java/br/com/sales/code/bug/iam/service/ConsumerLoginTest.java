@@ -16,7 +16,8 @@ public class ConsumerLoginTest {
     public void shouldGetSucessResultOfTryAuthenticate() {
         var userRepository = new UserRepository();
         var passwordHasher = new PasswordHasherDigest();
-        var authenticateService = new AuthenticationService(userRepository, passwordHasher);
+        var loginAttemptTracker = new LoginAttemptTracker();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
@@ -36,7 +37,8 @@ public class ConsumerLoginTest {
     public void shouldGetUserBlockedResultOfTryAuthenticate() {
         var userRepository = new UserRepository();
         var passwordHasher = new PasswordHasherDigest();
-        var authenticateService = new AuthenticationService(userRepository, passwordHasher);
+        var loginAttemptTracker = new LoginAttemptTracker();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());

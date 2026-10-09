@@ -9,15 +9,17 @@ public class AuthenticationService {
 
     private final UserRepository userRepository;
     private final PasswordHasher passwordHasher;
+    private final LoginAttemptTracker loginAttemptTracker;
 
-    public AuthenticationService(UserRepository userRepository, PasswordHasher passwordHasher) {
+    public AuthenticationService(UserRepository userRepository, PasswordHasher passwordHasher, LoginAttemptTracker loginAttemptTracker) {
         this.userRepository = userRepository;
         this.passwordHasher = passwordHasher;
+        this.loginAttemptTracker = loginAttemptTracker;
     }
 
     public User authenticate(String username, String password) {
 
-        var user = userRepository.getByUsername(username);
+        var user = this.userRepository.getByUsername(username);
         if (!UserStatus.ATIVO.equals(user.getStatus())) {
             throw new UserNotActiveException("O status do usuário é: %s.".formatted(user.getStatus()), user.getStatus());
         }
@@ -25,8 +27,15 @@ public class AuthenticationService {
         var passHash = this.passwordHasher.hash(password);
 
         if (!user.getPasswordHash().equals(passHash)) {
+
+            this.loginAttemptTracker.addAttemptFail(user.getId());
+
+            this.changeUserStatusToBlock(user);
+
             throw new InvalidCredentialsException("Senha inválida");
         }
+
+        this.loginAttemptTracker.restartAttempts(user.getId());
 
         return user;
     }
@@ -45,6 +54,13 @@ public class AuthenticationService {
                     return new Success(user);
                 })
                 .orElse(new UserNotFound(username));
+    }
+
+    private void changeUserStatusToBlock(User user) {
+        if (this.loginAttemptTracker.isReachedMaxAttempts(user.getId())) {
+            user.blockUser();
+            this.userRepository.save(user);
+        }
     }
 }
 

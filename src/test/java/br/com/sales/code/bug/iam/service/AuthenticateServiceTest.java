@@ -18,7 +18,8 @@ public class AuthenticateServiceTest {
     public void shouldThrowUserNotFoundExceptionIfNotFoundUser() {
         var userRepository = new UserRepository();
         var passwordHasher = new PasswordHasherDigest();
-        var authenticateService = new AuthenticationService(userRepository, passwordHasher);
+        var loginAttemptTracker = new LoginAttemptTracker();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
 
         var notFoundException = assertThrows(UserNotFoundException.class, () -> {
            authenticateService.authenticate("user", "pass");
@@ -30,7 +31,8 @@ public class AuthenticateServiceTest {
     public void shouldThrowExceptionOfStatusIfUserIsNotActive() {
         var userRepository = new UserRepository();
         var passwordHasher = new PasswordHasherDigest();
-        var authenticateService = new AuthenticationService(userRepository, passwordHasher);
+        var loginAttemptTracker = new LoginAttemptTracker();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
@@ -58,7 +60,8 @@ public class AuthenticateServiceTest {
     public void shouldThrowsInvalidCredentialsExceptionWithWrongPass() {
         var userRepository = new UserRepository();
         var passwordHasher = new PasswordHasherDigest();
-        var authenticateService = new AuthenticationService(userRepository, passwordHasher);
+        var loginAttemptTracker = new LoginAttemptTracker();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
@@ -74,7 +77,8 @@ public class AuthenticateServiceTest {
     public void shouldAuthenticateUserWithValidCredentials() {
         var userRepository = new UserRepository();
         var passwordHasher = new PasswordHasherDigest();
-        var authenticateService = new AuthenticationService(userRepository, passwordHasher);
+        var loginAttemptTracker = new LoginAttemptTracker();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
@@ -91,7 +95,8 @@ public class AuthenticateServiceTest {
     public void shouldThrowsUserNotActiveExceptionWithBlockedUserAndInvalidCredentials() {
         var userRepository = new UserRepository();
         var passwordHasher = new PasswordHasherDigest();
-        var authenticateService = new AuthenticationService(userRepository, passwordHasher);
+        var loginAttemptTracker = new LoginAttemptTracker();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
@@ -108,7 +113,8 @@ public class AuthenticateServiceTest {
     public void shouldReturnUserNotFoundInTryAuthenticate() {
         var userRepository = new UserRepository();
         var passwordHasher = new PasswordHasherDigest();
-        var authenticateService = new AuthenticationService(userRepository, passwordHasher);
+        var loginAttemptTracker = new LoginAttemptTracker();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
 
         var result = authenticateService.tryAuthenticate("teste", "teste");
         assertNotNull(result);
@@ -119,7 +125,8 @@ public class AuthenticateServiceTest {
     public void shouldReturnUserBlockedInTryAuthenticate() {
         var userRepository = new UserRepository();
         var passwordHasher = new PasswordHasherDigest();
-        var authenticateService = new AuthenticationService(userRepository, passwordHasher);
+        var loginAttemptTracker = new LoginAttemptTracker();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
@@ -136,7 +143,8 @@ public class AuthenticateServiceTest {
     public void shouldReturnUserPendingInTryAuthenticate() {
         var userRepository = new UserRepository();
         var passwordHasher = new PasswordHasherDigest();
-        var authenticateService = new AuthenticationService(userRepository, passwordHasher);
+        var loginAttemptTracker = new LoginAttemptTracker();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
@@ -153,7 +161,8 @@ public class AuthenticateServiceTest {
     public void shouldReturnInvalidCredentialsInTryAuthenticate() {
         var userRepository = new UserRepository();
         var passwordHasher = new PasswordHasherDigest();
-        var authenticateService = new AuthenticationService(userRepository, passwordHasher);
+        var loginAttemptTracker = new LoginAttemptTracker();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
 
         var id = UUID.randomUUID();
         var role = new Role("role", Set.of());
