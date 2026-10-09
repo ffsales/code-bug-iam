@@ -100,6 +100,10 @@ public class User {
         return false;
     }
 
+    public void blockUser() {
+        this.status = UserStatus.BLOQUEADO;
+    }
+
     @Override
     public boolean equals(Object other) {
         if (this == other)
