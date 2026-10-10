@@ -9,23 +9,21 @@ public class LoginAttemptTracker {
     private final ConcurrentHashMap<UUID, AtomicInteger> counterAttempts = new ConcurrentHashMap<>();
 
     public void addAttemptFail(UUID userId) {
-
         counterAttempts.computeIfAbsent(
                 userId,
                 key -> new AtomicInteger()
         ).incrementAndGet();
     }
 
-    public boolean isReachedMaxAttempts(UUID uuid) {
+    public boolean isReachedMaxAttempts(UUID userId) {
         int MAX_ATTEMPTS = 5;
-        return counterAttempts.get(uuid).get() == MAX_ATTEMPTS;
+        if (counterAttempts.containsKey(userId))
+            return counterAttempts.get(userId).get() == MAX_ATTEMPTS;
+        return false;
     }
 
     public void restartAttempts(UUID userId) {
-        if (counterAttempts.isEmpty())
-            return;
-        if (counterAttempts.get(userId) == null)
-            return;
-        counterAttempts.get(userId).getAndDecrement();
+        if (counterAttempts.containsKey(userId))
+            counterAttempts.replace(userId, new AtomicInteger());
     }
 }
