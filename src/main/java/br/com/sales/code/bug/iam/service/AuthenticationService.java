@@ -27,11 +27,7 @@ public class AuthenticationService {
         var passHash = this.passwordHasher.hash(password);
 
         if (!user.getPasswordHash().equals(passHash)) {
-
-            this.loginAttemptTracker.addAttemptFail(user.getId());
-
-            this.changeUserStatusToBlock(user);
-
+            this.treatLoginFail(user);
             throw new InvalidCredentialsException("Senha inválida");
         }
 
@@ -49,14 +45,25 @@ public class AuthenticationService {
                     if (UserStatus.PENDENTE.equals(user.getStatus()))
                         return new UserPending(username);
                     var passHash = this.passwordHasher.hash(password);
-                    if (!user.getPasswordHash().equals(passHash))
+                    if (!user.getPasswordHash().equals(passHash)) {
+                        this.treatLoginFail(user);
                         return new InvalidCredentials();
+                    }
+                    this.loginAttemptTracker.restartAttempts(user.getId());
                     return new Success(user);
                 })
                 .orElse(new UserNotFound(username));
     }
 
     private void changeUserStatusToBlock(User user) {
+        if (this.loginAttemptTracker.isReachedMaxAttempts(user.getId())) {
+            user.blockUser();
+            this.userRepository.save(user);
+        }
+    }
+
+    private void treatLoginFail(User user) {
+        this.loginAttemptTracker.addAttemptFail(user.getId());
         if (this.loginAttemptTracker.isReachedMaxAttempts(user.getId())) {
             user.blockUser();
             this.userRepository.save(user);

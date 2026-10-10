@@ -173,4 +173,118 @@ public class AuthenticateServiceTest {
         assertNotNull(result);
         assertInstanceOf(InvalidCredentials.class, result);
     }
+
+    @Test
+    public void shouldChangeUserStatusToBlock() {
+
+        var userRepository = new UserRepository();
+        var passwordHasher = new PasswordHasherDigest();
+        var loginAttemptTracker = new LoginAttemptTracker();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
+
+        var id = UUID.randomUUID();
+        var role = new Role("role", Set.of());
+        var user = User.newUser(id, "name", "email", "pass", UserStatus.ATIVO, Set.of(role), passwordHasher);
+        userRepository.save(user);
+
+        for (int i = 0; i < 5; i++) {
+            assertThrows(InvalidCredentialsException.class,
+                () -> authenticateService.authenticate("name", "pass1"));
+        }
+        var getUser = userRepository.getById(user.getId());
+
+        assertNotNull(getUser);
+        assertEquals(user.getId(), getUser.getId());
+        assertEquals(user.getUsername(), getUser.getUsername());
+
+        assertEquals(UserStatus.BLOQUEADO, getUser.getStatus());
+    }
+
+    @Test
+    public void shouldRestartCounterAttempts() {
+        var userRepository = new UserRepository();
+        var passwordHasher = new PasswordHasherDigest();
+        var loginAttemptTracker = new LoginAttemptTracker();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
+
+        var id = UUID.randomUUID();
+        var role = new Role("role", Set.of());
+        var user = User.newUser(id, "name", "email", "pass", UserStatus.ATIVO, Set.of(role), passwordHasher);
+        userRepository.save(user);
+
+        for (int i = 0; i < 3; i++) {
+            assertThrows(InvalidCredentialsException.class,
+                    () -> authenticateService.authenticate("name", "pass1"));
+        }
+
+        authenticateService.authenticate("name", "pass");
+
+        for (int i = 0; i < 3; i++) {
+            assertThrows(InvalidCredentialsException.class,
+                    () -> authenticateService.authenticate("name", "pass1"));
+        }
+
+        var getUser = userRepository.getById(user.getId());
+
+        assertNotNull(getUser);
+        assertEquals(user.getId(), getUser.getId());
+        assertEquals(user.getUsername(), getUser.getUsername());
+
+        assertEquals(UserStatus.ATIVO, getUser.getStatus());
+    }
+
+    @Test
+    public void shouldReturnInvalidCredentialsInTryAuthenticateAndBlockUser() {
+        var userRepository = new UserRepository();
+        var passwordHasher = new PasswordHasherDigest();
+        var loginAttemptTracker = new LoginAttemptTracker();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
+
+        var id = UUID.randomUUID();
+        var role = new Role("role", Set.of());
+        var user = User.newUser(id, "name", "email", "pass", UserStatus.ATIVO, Set.of(role), passwordHasher);
+        userRepository.save(user);
+
+        for (int i = 0; i < 5; i++) {
+            var result = authenticateService.tryAuthenticate("name", "error");
+            assertNotNull(result);
+            assertInstanceOf(InvalidCredentials.class, result);
+        }
+
+        var resultBlock = authenticateService.tryAuthenticate("name", "pass");
+        assertNotNull(resultBlock);
+        assertInstanceOf(UserBlocked.class, resultBlock);
+    }
+
+    @Test
+    public void shouldRestartCounterAttemptsOnTryAuthenticate() {
+        var userRepository = new UserRepository();
+        var passwordHasher = new PasswordHasherDigest();
+        var loginAttemptTracker = new LoginAttemptTracker();
+        var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
+
+        var id = UUID.randomUUID();
+        var role = new Role("role", Set.of());
+        var user = User.newUser(id, "name", "email", "pass", UserStatus.ATIVO, Set.of(role), passwordHasher);
+        userRepository.save(user);
+
+        for (int i = 0; i < 3; i++) {
+            var result = authenticateService.tryAuthenticate("name", "error");
+            assertNotNull(result);
+            assertInstanceOf(InvalidCredentials.class, result);
+        }
+
+        var resultSuccess = authenticateService.tryAuthenticate("name", "pass");
+        assertNotNull(resultSuccess);
+        assertInstanceOf(Success.class, resultSuccess);
+
+        for (int i = 0; i < 3; i++) {
+            var result = authenticateService.tryAuthenticate("name", "error");
+            assertNotNull(result);
+            assertInstanceOf(InvalidCredentials.class, result);
+        }
+
+        var statusResult = userRepository.getById(user.getId());
+        assertEquals(UserStatus.ATIVO, statusResult.getStatus());
+    }
 }
