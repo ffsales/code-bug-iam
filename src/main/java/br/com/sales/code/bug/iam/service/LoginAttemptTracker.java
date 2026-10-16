@@ -7,23 +7,29 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class LoginAttemptTracker {
 
     private final ConcurrentHashMap<UUID, AtomicInteger> counterAttempts = new ConcurrentHashMap<>();
+    private static final int MAX_ATTEMPTS = 5;
 
-    public void addAttemptFail(UUID userId) {
-        counterAttempts.computeIfAbsent(
+    public int addAttemptFail(UUID userId) {
+        return counterAttempts.computeIfAbsent(
                 userId,
                 key -> new AtomicInteger()
         ).incrementAndGet();
     }
 
     public boolean isReachedMaxAttempts(UUID userId) {
-        int MAX_ATTEMPTS = 5;
-        if (counterAttempts.containsKey(userId))
-            return counterAttempts.get(userId).get() == MAX_ATTEMPTS;
-        return false;
+        AtomicInteger counter = counterAttempts.get(userId);
+
+        return counter != null
+                && counter.get() >= MAX_ATTEMPTS;
     }
 
     public void restartAttempts(UUID userId) {
-        if (counterAttempts.containsKey(userId))
-            counterAttempts.replace(userId, new AtomicInteger());
+        counterAttempts.computeIfPresent(
+                userId,
+                (key, counter) -> {
+                    counter.set(0);
+                    return counter;
+                }
+        );
     }
 }

@@ -14,25 +14,26 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class UserRepository implements Repository<User, UUID> {
 
     //A decisão por usar um Map permite acelerar a busca e substituir um user caso seja inserido outro com o mesmo id
-    private final Map<UUID, User> mapUsersById;
+    private final ConcurrentHashMap<UUID, User> mapUsersById;
 
     //A decisão de manter dois índices, na implementação atual, gera risco de falha na manutenção já que cria dois
     //pontos de falha, o uso de espaço de armazenamento fica duplicado, mas temos ganho na consulta por nome, já que
     //não é necessário percorrer o primeiro mapa.
     //Porém, com o uso de um banco de dados real, podemos criar mais de um índice dentro da mesma estrutura.
-    private final Map<String, UUID> mapUsersByName;
+    private final ConcurrentHashMap<String, UUID> mapUsersByName;
 
     private final UserSerializer userSerializer;
 
     public UserRepository() {
-        this.mapUsersById = new HashMap<>();
-        this.mapUsersByName = new HashMap<>();
+        this.mapUsersById = new ConcurrentHashMap<>();
+        this.mapUsersByName = new ConcurrentHashMap<>();
         this.userSerializer = new UserSerializer(new JsonSerializer());
     }
 
@@ -58,15 +59,19 @@ public class UserRepository implements Repository<User, UUID> {
         //de regra de negócio
         Objects.requireNonNull(newUser, "Entidade inválida");
 
-        if (this.mapUsersByName.containsKey(newUser.getUsername())
-            && !this.mapUsersByName.get(newUser.getUsername()).equals(newUser.getId())) {
-            throw new DuplicateUsernameException("Já existe um usuário com esse username");
+        if (this.mapUsersById.containsKey(newUser.getId()) && this.mapUsersById.get(newUser.getId()).getUsername().equals(newUser.getUsername())) {
+            this.mapUsersById.put(newUser.getId(), newUser);
+        } else {
+            if (this.mapUsersByName.containsKey(newUser.getUsername())
+                && !this.mapUsersByName.get(newUser.getUsername()).equals(newUser.getId())) {
+                throw new DuplicateUsernameException("Já existe um usuário com esse username");
+            }
+
+            this.findById(newUser.getId()).ifPresent(u -> mapUsersByName.remove(u.getUsername()));
+
+            this.mapUsersById.put(newUser.getId(), newUser);
+            this.mapUsersByName.put(newUser.getUsername(), newUser.getId());
         }
-
-        this.findById(newUser.getId()).ifPresent(u -> mapUsersByName.remove(u.getUsername()));
-
-        this.mapUsersById.put(newUser.getId(), newUser);
-        this.mapUsersByName.put(newUser.getUsername(), newUser.getId());
     }
 
     public List<User> findByStatus(UserStatus status) {

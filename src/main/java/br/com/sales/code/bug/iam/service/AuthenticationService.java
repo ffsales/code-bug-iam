@@ -46,8 +46,7 @@ public class AuthenticationService {
                         return new UserPending(username);
                     var passHash = this.passwordHasher.hash(password);
                     if (!user.getPasswordHash().equals(passHash)) {
-                        this.treatLoginFail(user);
-                        return new InvalidCredentials();
+                        return this.treatLoginFail(user);
                     }
                     this.loginAttemptTracker.restartAttempts(user.getId());
                     return new Success(user);
@@ -55,19 +54,15 @@ public class AuthenticationService {
                 .orElse(new UserNotFound(username));
     }
 
-    private void changeUserStatusToBlock(User user) {
-        if (this.loginAttemptTracker.isReachedMaxAttempts(user.getId())) {
+    private LoginResult treatLoginFail(User user) {
+        var attempts = this.loginAttemptTracker.addAttemptFail(user.getId());
+        int MAX_ATTEMPTS = 5;
+        if (attempts >= MAX_ATTEMPTS) {
             user.blockUser();
             this.userRepository.save(user);
+            return new UserBlocked(user.getUsername());
         }
-    }
-
-    private void treatLoginFail(User user) {
-        this.loginAttemptTracker.addAttemptFail(user.getId());
-        if (this.loginAttemptTracker.isReachedMaxAttempts(user.getId())) {
-            user.blockUser();
-            this.userRepository.save(user);
-        }
+        return new InvalidCredentials();
     }
 }
 

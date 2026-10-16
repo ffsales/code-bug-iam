@@ -248,7 +248,10 @@ public class AuthenticateServiceTest {
         for (int i = 0; i < 5; i++) {
             var result = authenticateService.tryAuthenticate("name", "error");
             assertNotNull(result);
-            assertInstanceOf(InvalidCredentials.class, result);
+            if (i < 4)
+                assertInstanceOf(InvalidCredentials.class, result);
+            if (i == 4)
+                assertInstanceOf(UserBlocked.class, result);
         }
 
         var resultBlock = authenticateService.tryAuthenticate("name", "pass");
