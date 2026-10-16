@@ -151,6 +151,34 @@ Regras de comportamento como mentor:
     preservando a causa. `RepositoryPersistenceException` ficou fora da hierarquia de `DomainException`
     por decisão documentada (falha de I/O/parsing não é violação de regra de negócio, é infraestrutura).
   Enunciado completo abaixo.
+- ✅ **Exercício 8 (Fase 2) — CONCLUÍDO**: `LoginAttemptTracker` (contador de tentativas falhas por
+  `UUID`, via `ConcurrentHashMap<UUID, AtomicInteger>`) integrado em `AuthenticationService.authenticate`/
+  `tryAuthenticate`, bloqueando após 5 falhas — reaproveitando `UserStatus.BLOQUEADO` (decisão
+  documentada em Javadoc: representa tanto bloqueio administrativo quanto por tentativas, sem
+  distinção de variante nova em `LoginResult`). Validado por um teste que dispara 10 tentativas
+  concorrentes via `ExecutorService` contra a mesma conta. Esse teste exigiu várias rodadas de
+  depuração de concorrência de verdade (bugs só reproduzíveis rodando, não lendo o código):
+  - `tryAuthenticate` sempre devolvia `InvalidCredentials` pra senha errada, mesmo na tentativa que
+    estourava o limite — corrigido fazendo `treatLoginFail` devolver o `LoginResult` certo
+    (`UserBlocked`/`InvalidCredentials`) em vez de decidir isso em outro lugar.
+  - TOCTOU no contador: incrementar (`addAttemptFail`) e checar o limite (`isReachedMaxAttempts`)
+    eram duas operações atômicas **separadas**, com uma brecha entre elas onde outra thread podia
+    incrementar primeiro — corrigido fazendo `addAttemptFail` devolver o valor do próprio
+    `incrementAndGet()`, e decidindo em cima desse valor, sem reconsulta.
+  - `attempts == MAX_ATTEMPTS` só reconhecia a tentativa que acertava exatamente 5; as seguintes (6,
+    7...) escapavam e voltavam a contar como `InvalidCredentials` — trocado para `>=`, o que também
+    tornou o resultado 100% determinístico (confirmado por 30+ execuções diretas e via `mvn test`:
+    sempre 4 `InvalidCredentials` / 6 `UserBlocked` em 10 tentativas concorrentes, nunca flaky).
+  - Bug pré-existente em `UserRepository.save()`, exposto só pela concorrência real: salvar o mesmo
+    usuário concorrentemente removia e recolocava a entrada do índice secundário por `username`
+    (mesmo sem o username ter mudado), abrindo uma janela em que `findByUsername` via "ninguém ali"
+    — causava um `UserNotFound` esporádico (~1 em 15 execuções). Corrigido evitando tocar no índice
+    de nome quando o `username` não muda (`mapUsersById`/`mapUsersByName` migraram para
+    `ConcurrentHashMap`, mas isso só garante atomicidade de operação isolada, não da sequência
+    remove-depois-put como um todo).
+  - Teste sequencial com off-by-one (`if (i == 5)` dentro de um loop `i < 5`, nunca satisfeito) que
+    deixava de verificar o caso de fronteira (a 5ª tentativa); corrigido para `i == 4`.
+  Enunciado completo abaixo.
 
 ---
 
@@ -584,6 +612,90 @@ sistema de arquivos.
 
 ---
 
+## Exercício 8 — Concorrência básica
+
+**Objetivo:** revisar primitivas de concorrência em Java (`ExecutorService`, `Runnable`/`Callable`,
+`Future`, `AtomicInteger`, `ConcurrentHashMap`, `synchronized`) implementando uma regra de bloqueio
+por tentativas falhas de login, e escrevendo um teste que force concorrência real — não só provar
+que a regra funciona em sequência, mas que o contador por trás dela não perde nem duplica incrementos
+quando várias threads batem nele ao mesmo tempo.
+
+### Contexto / ponto de partida
+- Hoje `AuthenticationService.authenticate`/`tryAuthenticate` resolvem um login numa tentativa
+  isolada: username → status → senha. Não existe memória de tentativas anteriores entre chamadas.
+- `LoginResult` (Exercício 4) já modela `UserBlocked`/`UserPending` como estados de **conta**
+  (vêm de `UserStatus`, uma coluna/campo persistido). A regra deste exercício é de outra natureza:
+  bloqueio por **comportamento** (N tentativas falhas consecutivas), tipicamente temporário — pense
+  se isso é um novo valor de `UserStatus`, uma variante nova de `LoginResult`, ou um estado que vive
+  só no serviço, fora do `User` (o próprio enunciado não força uma resposta — justifique a sua).
+- Nenhum componente hoje guarda estado entre chamadas de `authenticate` (o `UserRepository` guarda
+  o `User` atual, não histórico de tentativas).
+
+### O que implementar
+
+1. **Um componente que rastreia tentativas falhas por usuário** (nome e localização são decisão
+   sua — ex: `LoginAttemptTracker`, injetado em `AuthenticationService`, ou outra forma). Ele precisa:
+   - Registrar uma falha para um usuário (pense na chave: `username` ou `UUID` — qual identifica
+     melhor "a mesma conta" através de tentativas diferentes, inclusive se o `username` puder mudar?).
+   - Resetar a contagem num login bem-sucedido.
+   - Responder se aquela conta está bloqueada por tentativas (limite: **5** falhas consecutivas desde
+     o último sucesso ou reset).
+2. **Integrar a regra em `authenticate`/`tryAuthenticate`**: uma tentativa contra uma conta já
+   bloqueada por tentativas deve falhar **antes** de checar a senha (mesma lição de ordem de
+   checagem do Exercício 3 — não revelar "a senha estava certa" pra uma conta já bloqueada).
+3. **Decidir o desfecho de `tryAuthenticate` para esse bloqueio**: reaproveita `UserBlocked` (ou a
+   variante equivalente que você já tem) ou é um desfecho novo do `LoginResult`? Se criar um novo,
+   lembre que o `switch` exaustivo do Exercício 4 (`ConsumerLogin.describe`) vai **quebrar a
+   compilação** até você tratar o caso novo — isso é o recurso, não um bug, mas precisa ser feito.
+4. **Uma simulação com `ExecutorService`**: disparar N tentativas de login *concorrentes* contra a
+   mesma conta (senha errada), esperar todas terminarem (`invokeAll`/`Future.get`/`CountDownLatch` —
+   decisão sua) e então verificar o estado final — contagem de falhas e bloqueio exatamente como
+   esperado, nem mais nem menos tentativas contadas do que threads que efetivamente rodaram.
+
+### Restrições de design
+- O contador de tentativas falhas **precisa ser seguro sob concorrência real**. Nada de um campo
+  `int`/`Integer` incrementado sem sincronização, nem um `Map.get(...)` seguido de `Map.put(...)`
+  como duas operações separadas — isso é exatamente a race condition que o exercício quer expor
+  (ler, incrementar e decidir bloquear precisam ser atômicos de ponta a ponta, não três passos onde
+  outra thread pode "entrar no meio"). Pense em `AtomicInteger`, `ConcurrentHashMap.compute`/`merge`,
+  ou um bloco `synchronized` — e esteja pronto pra explicar por que a opção escolhida fecha a brecha.
+- Esse rastreamento é um segundo estado mutável compartilhado, além do `Map` do próprio
+  `UserRepository`. Pergunta pra você: o `UserRepository` de hoje (um `HashMap` comum, sem nenhuma
+  sincronização) é thread-safe? Precisa ser, pra esse exercício funcionar corretamente sob o teste
+  concorrente do item 4? Se não for, o que isso significa pro resultado do teste?
+- Não regride nas convenções anteriores (hierarquia de `LoginResult`/exceções já fixada, injeção por
+  interface onde fizer sentido, Javadoc do "porquê" em decisões não óbvias).
+
+### Teste de aceitação
+1. **Sequencial — bloqueio liga**: 5 tentativas com senha errada bloqueiam a conta; uma 6ª tentativa
+   — mesmo com a senha **certa** — é rejeitada por bloqueio, não autenticada.
+2. **Sequencial — reset funciona**: 3 falhas, depois 1 sucesso, depois mais 3 falhas **não** bloqueia
+   (o sucesso no meio zera a contagem).
+3. **Concorrente (o teste que prova o exercício de fato)**: disparar via `ExecutorService` um número
+   de tentativas simultâneas maior que o limite (ex: 20 threads, mesma conta, senha errada), esperar
+   todas terminarem, e verificar que a conta ficou bloqueada e a contagem não "vazou" por race
+   condition. Se você chegou a rodar essa simulação contra uma versão não sincronizada do contador
+   antes de corrigir, documente o que observou (contagem menor que o número de falhas reais é o
+   sintoma clássico de incremento não atômico) — é exatamente o tipo de teste que expõe bug que vale
+   reconhecer.
+4. (opcional, mas recomendado) repetir o teste concorrente várias vezes em sequência (`@RepeatedTest`,
+   se quiser adiantar um pouco do Exercício 9) — race conditions são intermitentes; um único green
+   não prova ausência de bug.
+
+### Conexão com o domínio (CIAM)
+- Lockout por tentativas falhas é defesa padrão contra brute-force em qualquer authorization server
+  — PingFederate, Keycloak, Auth0 implementam alguma forma disso, geralmente com contagem
+  **distribuída** entre múltiplas instâncias/nós (Redis, banco com lock otimista). "Contador
+  thread-safe numa única JVM" é o primeiro degrau de um problema que, em produção, vira "contador
+  consistente entre processos" — a dificuldade não desaparece, só muda de lugar.
+- A diferença entre bloqueio por `UserStatus.BLOQUEADO` (ação administrativa, estado persistido) e
+  bloqueio por tentativas (comportamental, geralmente com expiração automática) é uma distinção real
+  em produtos de IAM — decidir consigo mesmo se o `LoginResult` trata os dois como o mesmo desfecho,
+  e por quê, é o mesmo tipo de escolha que um authorization server real precisa tomar ao desenhar sua
+  resposta de erro.
+
+---
+
 ## Roteiro completo (para continuar após o Exercício 2)
 
 ### Fase 1 — Fundamentos revisitados
@@ -605,9 +717,9 @@ sistema de arquivos.
   (sem framework, usando `java.nio.file`). (✅ concluído)
 - Exercício 8: Concorrência básica — simular tentativas de login concorrentes com
   `ExecutorService`, garantindo que o contador de tentativas falhas (regra de bloqueio após 5
-  falhas) seja thread-safe. (🔄 próximo)
+  falhas) seja thread-safe. (✅ concluído)
 - Exercício 9: Testes com JUnit 5 — parametrização (`@ParameterizedTest`), `@Nested`, mocks simples
-  (sem Mockito ainda, só para fixar a API do JUnit).
+  (sem Mockito ainda, só para fixar a API do JUnit). (🔄 próximo)
 
 ### Fase 3 — Avançado
 - Exercício 10: Virtual Threads (Project Loom) — reescrever o cenário de login concorrente do
