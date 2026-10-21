@@ -4,6 +4,7 @@ import br.com.sales.code.bug.iam.domain.Role;
 import br.com.sales.code.bug.iam.domain.User;
 import br.com.sales.code.bug.iam.domain.UserStatus;
 import br.com.sales.code.bug.iam.repository.UserRepository;
+import br.com.sales.code.bug.iam.service.doubles.LoginAttemptTrackerFake;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -16,7 +17,7 @@ public class ConsumerLoginTest {
     public void shouldGetSucessResultOfTryAuthenticate() {
         var userRepository = new UserRepository();
         var passwordHasher = new PasswordHasherDigest();
-        var loginAttemptTracker = new LoginAttemptTracker();
+        var loginAttemptTracker = new LoginAttemptTrackerImpl();
         var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
 
         var id = UUID.randomUUID();
@@ -37,7 +38,7 @@ public class ConsumerLoginTest {
     public void shouldGetUserBlockedResultOfTryAuthenticate() {
         var userRepository = new UserRepository();
         var passwordHasher = new PasswordHasherDigest();
-        var loginAttemptTracker = new LoginAttemptTracker();
+        var loginAttemptTracker = new LoginAttemptTrackerFake();
         var authenticateService = new AuthenticationService(userRepository, passwordHasher, loginAttemptTracker);
 
         var id = UUID.randomUUID();
